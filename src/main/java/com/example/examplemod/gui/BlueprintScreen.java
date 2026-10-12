@@ -428,8 +428,6 @@ public final class BlueprintScreen extends ClientScreen {
         tooltip(g, mx, my, x + half + 4, y, w - half - 4, 20, "Mausrad-Klick auf einen noch nicht gebauten Block nimmt das Item aus deinem Inventar "
                 + "in die Hand. Es wird nichts erzeugt. Ist ein echter Block näher, gilt der normale Mittelklick.");
         y += 24;
-        y += paragraph(g, "Mittelklick: nur mit eingeblendeter Block-Info sinnvoll. Ohne sie haben die Geisterblöcke keine Umrandung "
-                + "und man sieht nicht, welcher gerade anvisiert ist.", x, y, w, Theme.TEXT_MUTED) + 6;
         y = renderInfoKey(g, mx, my, x, y, w) + 6;
         y += paragraph(g, "Markierungen: Rot = falscher Block · Gelb = Zustand/Ausrichtung · Violett = unbekannt"
                 + " · Blau = fehlt (nur bei „Alles“)", x, y, w, Theme.TEXT_DIM) + 6;

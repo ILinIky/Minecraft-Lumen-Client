@@ -472,7 +472,8 @@ public final class Blueprints extends Module {
         hover = null;
         if (plan == null || !plan.inDimension(mc.level)) return;
         renderer.render(plan, context, renderStyle(), range.getInt());
-        if (!infoVisible() || mc.level == null) return;
+        // Der anvisierte Geisterblock ist immer umrandet; den Tooltip gibt es nur mit Block-Info.
+        if (mc.level == null) return;
         hover = findHover(context.cameraPos(), Vec3.directionFromRotation(context.camera().getXRot(), context.camera().getYRot()));
         if (hover != null) {
             VertexConsumer lines = Render3D.lines(context);

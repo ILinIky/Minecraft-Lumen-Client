@@ -111,7 +111,7 @@ Baupläne aus älteren Minecraft-Versionen werden automatisch umgewandelt, z. B.
   in die Hand, genau wie *Block auswählen* im Überlebensmodus. Liegt es in der Hotbar, wird der Platz gewählt, sonst wird es
   aus dem Inventar in die Hotbar getauscht. Es wird nie ein Item erzeugt, auch nicht im Kreativmodus. Fehlt es, erscheint z. B.
   „Eichenholztreppe nicht im Inventar · 34 noch offen“. Ist ein echter Block näher, gilt der normale Mittelklick.
-  Den anvisierten Geisterblock sieht man nur bei eingeblendeter Block-Info, sonst fehlt seine Umrandung.
+  Der anvisierte Geisterblock ist dabei immer umrandet, auch ohne Block-Info.
 - Der geladene Plan wird **pro Welt gemerkt** und beim nächsten Betreten wiederhergestellt.
 
 **Eigene Baupläne speichern** (Reiter *Aufnehmen*)
