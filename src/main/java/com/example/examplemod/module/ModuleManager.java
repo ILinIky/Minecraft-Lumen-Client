@@ -198,7 +198,7 @@ public final class ModuleManager {
     public static void onKeyPressed(int key) {
         if (!initialized || key == GLFW.GLFW_KEY_UNKNOWN) return;
         for (Module module : MODULES) {
-            if (module.getKey() == key) module.toggle();
+            if (module.getKey() == key) module.onKeyPressed();
         }
     }
 }

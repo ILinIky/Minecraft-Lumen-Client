@@ -41,6 +41,12 @@ import org.lwjgl.glfw.GLFW;
 @Mod.EventBusSubscriber(modid = ExampleMod.MODID, value = Dist.CLIENT)
 public class ClientEvents {
 
+    /** Vor Minecrafts eigener Tastenverarbeitung: Mittelklick auf einen Bauplan-Block abfangen. */
+    @SubscribeEvent
+    public static void onClientTickStart(TickEvent.ClientTickEvent.Pre event) {
+        if (ModuleManager.isReady() && ModuleManager.BLUEPRINTS != null) ModuleManager.BLUEPRINTS.handlePickKey();
+    }
+
     @SubscribeEvent
     public static void onClientTick(TickEvent.ClientTickEvent.Post event) {
         if (!ModuleManager.isReady()) return;

@@ -103,8 +103,11 @@ Baupläne aus älteren Minecraft-Versionen werden automatisch umgewandelt, z. B.
   Wählbar: *Taste halten* (Standard), *Taste umschalten*, *Immer* oder *Aus*. Die Taste lässt sich direkt im
   Bauplan-Fenster (*Platzierung → Block-Info-Taste*) neu belegen, auch mit Maus-Seitentasten. Doppelte Belegungen werden angezeigt.
 - **Markierungen:** *Aus*, *Nur Fehler* (Standard: 🔴 falscher Block · 🟡 falsche Ausrichtung · 🟣 unbekannt) oder *Alles* (zusätzlich 🔵 fehlt).
-- **Sichtbarkeit:** Stufen *Normal*, *Kräftig*, *Maximal* oder einzeln: Deckkraft bis 100 %, Einfärbung in der Akzentfarbe,
-  *Durch Wände* (z. B. für Ebenen unter der Erde) und *Pulsieren*.
+- **Deckkraft** der Vorschau von 15 bis 100 %.
+- **Mittelklick wählt Bauplan-Block** (Standard: an): Mausrad-Klick auf einen noch nicht gebauten Block nimmt das passende Item
+  in die Hand, genau wie *Block auswählen* im Überlebensmodus. Liegt es in der Hotbar, wird der Platz gewählt, sonst wird es
+  aus dem Inventar in die Hotbar getauscht. Es wird nie ein Item erzeugt, auch nicht im Kreativmodus. Fehlt es, erscheint z. B.
+  „Eichenholztreppe nicht im Inventar · 34 noch offen“. Ist ein echter Block näher, gilt der normale Mittelklick.
 - Der geladene Plan wird **pro Welt gemerkt** und beim nächsten Betreten wiederhergestellt.
 
 **Eigene Baupläne speichern** (Reiter *Aufnehmen*)
@@ -124,12 +127,14 @@ Gespeichert werden Blöcke mit Ausrichtung und Zustand, aber keine Kisteninhalte
 | **B** | Baupläne |
 | **Bild ↑ / Bild ↓** | Bauplan-Ebene wechseln |
 | **Alt** (halten, änderbar) | Bauplan: Block-Info zum anvisierten Block |
+| **Mausrad-Klick** | Bauplan: Item des anvisierten, noch nicht gebauten Blocks in die Hand nehmen |
 | **K** | Kisten-Gedächtnis durchsuchen |
 | **F6** | Wegpunkt-Menü |
 | **F7** | Wegpunkt speichern |
 | **F5** | Zum letzten Wegpunkt teleportieren |
 
 Feste Tasten lassen sich unter *Optionen → Steuerung → Lumen Client* ändern. Für jedes Modul kann man im Client-Menü eine eigene Taste festlegen.
+Sie schaltet das Modul ein und aus; beim Kisten-Gedächtnis öffnet sie stattdessen die Suche.
 
 | Befehl | Aktion |
 |---|---|

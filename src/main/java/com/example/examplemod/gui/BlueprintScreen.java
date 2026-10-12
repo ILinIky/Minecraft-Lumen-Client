@@ -272,32 +272,6 @@ public final class BlueprintScreen extends ClientScreen {
         return y;
     }
 
-    /** Sichtbarkeit: drei Stufen zum Anklicken und die einzelnen Schalter darunter. */
-    private int renderVisibility(GuiGraphics g, int mx, int my, int x, int y, int w) {
-        String current = feature.visibility();
-        g.drawString(font, "Sichtbarkeit", x, y + 6, Theme.TEXT_DIM, false);
-        int labelW = font.width("Sichtbarkeit") + 10;
-        int presetW = (w - labelW - 8) / 3;
-        for (int i = 0; i < Blueprints.VISIBILITY.length; i++) {
-            String preset = Blueprints.VISIBILITY[i];
-            button(g, mx, my, x + labelW + i * (presetW + 4), y, presetW, 20, preset,
-                    preset.equals(current) ? Style.PRIMARY : Style.SECONDARY, () -> feature.applyVisibility(preset));
-        }
-        tooltip(g, mx, my, x + labelW, y, w - labelW, 20, current.equals("Eigene")
-                ? "Eigene Einstellung – eine Stufe anklicken, um zurückzusetzen"
-                : "Normal: 50 % · Kräftig: 75 % + leichte Einfärbung · Maximal: 95 % + starke Einfärbung, durch Wände, pulsierend");
-        y += 24;
-        int third = (w - 8) / 3;
-        button(g, mx, my, x, y, third, 20, "Einfärbung: " + feature.tint.get(),
-                feature.tint.is("Aus") ? Style.SECONDARY : Style.PRIMARY, () -> feature.tint.cycle(hasShiftDown() ? -1 : 1));
-        button(g, mx, my, x + third + 4, y, third, 20, "Durch Wände: " + (feature.throughWalls.get() ? "An" : "Aus"),
-                feature.throughWalls.get() ? Style.PRIMARY : Style.SECONDARY, feature.throughWalls::toggle);
-        button(g, mx, my, x + 2 * (third + 4), y, w - 2 * (third + 4), 20, "Pulsieren: " + (feature.pulse.get() ? "An" : "Aus"),
-                feature.pulse.get() ? Style.PRIMARY : Style.SECONDARY, feature.pulse::toggle);
-        tooltip(g, mx, my, x + third + 4, y, third, 20, feature.throughWalls.getDescription());
-        return y + 24;
-    }
-
     private static int nextOpacity(int current, boolean backwards) {
         int[] steps = {30, 50, 70, 85, 100};
         if (backwards) {
@@ -434,7 +408,6 @@ public final class BlueprintScreen extends ClientScreen {
         button(g, mx, my, x + half + 4, y, w - half - 4, 20, "Deckkraft: " + feature.opacity.getInt() + "%", Style.SECONDARY,
                 () -> feature.opacity.set(nextOpacity(feature.opacity.getInt(), hasShiftDown())));
         y += 24;
-        y = renderVisibility(g, mx, my, x, y, w);
         boolean infoOn = !feature.blockInfo.is(Blueprints.INFO_OFF);
         button(g, mx, my, x, y, half, 20, UiRender.ellipsize(font, "Block-Info: " + feature.infoLabel(), half - 8),
                 infoOn ? Style.PRIMARY : Style.SECONDARY, () -> feature.blockInfo.cycle(hasShiftDown() ? -1 : 1));
@@ -445,6 +418,12 @@ public final class BlueprintScreen extends ClientScreen {
                 marking ? Style.PRIMARY : Style.SECONDARY, () -> feature.markers.cycle(hasShiftDown() ? -1 : 1));
         tooltip(g, mx, my, x + half + 4, y, w - half - 4, 20,
                 "Aus → Nur Fehler (rot/gelb/violett) → Alles (zusätzlich blau = fehlt) · Shift: rückwärts");
+        y += 24;
+        boolean picking = feature.pickBlock.get();
+        button(g, mx, my, x, y, w, 20, "Mittelklick wählt Bauplan-Block: " + (picking ? "An" : "Aus"),
+                picking ? Style.PRIMARY : Style.SECONDARY, feature.pickBlock::toggle);
+        tooltip(g, mx, my, x, y, w, 20, "Mausrad-Klick auf einen noch nicht gebauten Block nimmt das Item aus deinem Inventar "
+                + "in die Hand. Es wird nichts erzeugt. Ist ein echter Block näher, gilt der normale Mittelklick.");
         y += 24;
         y = renderInfoKey(g, mx, my, x, y, w) + 6;
         y += paragraph(g, "Markierungen: Rot = falscher Block · Gelb = Zustand/Ausrichtung · Violett = unbekannt"

@@ -94,6 +94,15 @@ public class ChestMemory extends Module {
     @Override
     public boolean showInModuleList() { return false; }
 
+    /** Die eigene Taste öffnet die Suche, statt das Gedächtnis auszuschalten. */
+    @Override
+    public void onKeyPressed() {
+        if (mc.screen == null && mc.player != null) mc.setScreen(new ChestSearchScreen(null, ""));
+    }
+
+    @Override
+    public String keyLabel() { return "Taste (Suche)"; }
+
     /** Aus dem Forge-Event: Rechtsklick auf einen Block (nur Client-Seite). */
     public void onInteract(BlockPos pos) {
         lastInteraction = pos.immutable();

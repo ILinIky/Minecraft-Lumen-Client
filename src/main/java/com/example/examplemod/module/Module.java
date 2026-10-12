@@ -67,6 +67,12 @@ public abstract class Module {
 
     public void toggle() { setEnabled(!enabled); }
 
+    /** Eigene Taste aus dem Client-Menü gedrückt; Standard: ein- und ausschalten. */
+    public void onKeyPressed() { toggle(); }
+
+    /** Beschriftung der Tastenzeile im Client-Menü. */
+    public String keyLabel() { return "Taste"; }
+
     public void setEnabled(boolean enabled) { setEnabled(enabled, true); }
 
     public void setEnabled(boolean enabled, boolean notify) {

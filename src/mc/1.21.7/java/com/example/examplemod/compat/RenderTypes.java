@@ -57,21 +57,6 @@ public final class RenderTypes extends RenderStateShard {
 
     public static RenderType filledQuads() { return RenderType.debugQuads(); }
 
-    private static final RenderPipeline QUADS_THROUGH_WALLS = RenderPipeline.builder(RenderPipelines.DEBUG_FILLED_SNIPPET)
-            .withLocation(ResourceLocation.fromNamespaceAndPath(ExampleMod.MODID, "pipeline/quads_through_walls"))
-            .withCull(false)
-            .withDepthTestFunction(DepthTestFunction.NO_DEPTH_TEST)
-            .withDepthWrite(false)
-            .build();
-
-    private static final RenderType FILLED_QUADS_THROUGH_WALLS = RenderType.create("examplemod_quads_through_walls", 1536,
-            false, true, QUADS_THROUGH_WALLS, RenderType.CompositeState.builder().createCompositeState(false));
-
-    /** Halbtransparente Flächen, wahlweise auch hinter Blöcken sichtbar. */
-    public static RenderType filledQuads(boolean throughWalls) {
-        return throughWalls ? FILLED_QUADS_THROUGH_WALLS : filledQuads();
-    }
-
     // ---- Blockumrandung mit wählbarer Linienstärke ----
 
     private static final Map<Integer, RenderType> OUTLINES = new HashMap<>();
@@ -102,21 +87,4 @@ public final class RenderTypes extends RenderStateShard {
             BLUEPRINT_PIPELINE, RenderType.CompositeState.builder().setTextureState(BLOCK_SHEET_MIPPED)
                     .setLightmapState(LIGHTMAP).setOutputState(MAIN_TARGET)
                     .createCompositeState(false));
-
-    /** Wie {@link #BLUEPRINT_GHOST}, aber ohne Tiefentest: auch hinter Erde und Wänden sichtbar. */
-    private static final RenderPipeline BLUEPRINT_THROUGH_WALLS_PIPELINE = RenderPipeline.builder(RenderPipelines.TERRAIN_SNIPPET)
-            .withLocation(ResourceLocation.fromNamespaceAndPath(ExampleMod.MODID, "pipeline/blueprint_through_walls"))
-            .withBlend(BlendFunction.TRANSLUCENT).withDepthWrite(false)
-            .withDepthTestFunction(DepthTestFunction.NO_DEPTH_TEST)
-            .withShaderDefine("ALPHA_CUTOUT", 0.01F).build();
-
-    private static final RenderType BLUEPRINT_GHOST_THROUGH_WALLS = RenderType.create("examplemod_blueprint_through_walls",
-            2 * 1024 * 1024, false, true, BLUEPRINT_THROUGH_WALLS_PIPELINE,
-            RenderType.CompositeState.builder().setTextureState(BLOCK_SHEET_MIPPED)
-                    .setLightmapState(LIGHTMAP).setOutputState(MAIN_TARGET)
-                    .createCompositeState(false));
-
-    public static RenderType blueprintGhost(boolean throughWalls) {
-        return throughWalls ? BLUEPRINT_GHOST_THROUGH_WALLS : BLUEPRINT_GHOST;
-    }
 }

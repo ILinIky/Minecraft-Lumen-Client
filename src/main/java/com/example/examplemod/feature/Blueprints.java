@@ -23,8 +23,15 @@ import com.example.examplemod.gui.Theme;
 import com.example.examplemod.render.Render3D;
 import com.mojang.blaze3d.vertex.VertexConsumer;
 import net.minecraft.SharedConstants;
+import net.minecraft.client.player.LocalPlayer;
 import net.minecraft.core.BlockPos;
 import net.minecraft.util.Mth;
+import net.minecraft.world.entity.player.Inventory;
+import net.minecraft.world.inventory.ClickType;
+import net.minecraft.world.item.Item;
+import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.item.Items;
+import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.ClipContext;
 import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.BlockHitResult;
@@ -55,11 +62,9 @@ public final class Blueprints extends Module {
     public final Setting.Slider opacity, range;
     /** Linien an Blöcken: Aus, Nur Fehler (rot/gelb/violett) oder Alles (zusätzlich blau = fehlt). */
     public final Setting.Mode markers;
-    public final Setting.Mode tint;
-    public final Setting.Bool throughWalls, pulse;
     public static final String MARKERS_OFF = "Aus", MARKERS_ERRORS = "Nur Fehler", MARKERS_ALL = "Alles";
-    public static final String[] VISIBILITY = {"Normal", "Kräftig", "Maximal"};
     public final Setting.Mode blockInfo;
+    public final Setting.Bool pickBlock;
     private BlueprintPlan plan;
     private Path file;
     private Future<?> pending;
@@ -81,12 +86,12 @@ public final class Blueprints extends Module {
         markers = add(new Setting.Mode("Markierungen",
                 "Nur Fehler: rot = falscher Block, gelb = Ausrichtung, violett = unbekannt · Alles: zusätzlich blau = fehlt",
                 MARKERS_ERRORS, MARKERS_OFF, MARKERS_ERRORS, MARKERS_ALL));
-        tint = add(new Setting.Mode("Einfärbung", "Leuchtende Schicht in der Akzentfarbe über der Vorschau", "Aus", "Aus", "Leicht", "Stark"));
-        throughWalls = add(new Setting.Bool("Durch Wände", "Vorschau auch hinter Erde und Blöcken zeigen, z.B. für Ebenen unter der Oberfläche", false));
-        pulse = add(new Setting.Bool("Pulsieren", "Vorschau sanft auf- und abblenden, damit sie auffällt", false));
         blockInfo = add(new Setting.Mode("Block-Info",
                 "Name, Ausrichtung und Inventar des anvisierten, noch nicht gebauten Blocks. Taste im Bauplan-Fenster (Platzierung) frei wählbar, Standard: linkes Alt",
                 INFO_HOLD, INFO_HOLD, INFO_TOGGLE, INFO_ALWAYS, INFO_OFF).onChange(() -> infoToggled = false));
+        pickBlock = add(new Setting.Bool("Mittelklick wählt Bauplan-Block",
+                "Mausrad-Klick auf einen noch nicht gebauten Block nimmt das passende Item aus dem Inventar in die Hand, wie Block auswählen im Überlebensmodus",
+                true));
         add(new Setting.Action("Baupläne öffnen", "Datei laden, platzieren und Materialliste ansehen", () -> mc.setScreen(new BlueprintScreen(mc.screen))));
     }
 
@@ -193,40 +198,12 @@ public final class Blueprints extends Module {
         }
     }
 
-    // ---- Sichtbarkeit der Vorschau ----
+    // ---- Darstellung der Vorschau ----
 
     private BlueprintRenderer.Style renderStyle() {
-        float alpha = (float) opacity.get() / 100F;
-        if (pulse.get()) alpha *= 0.6F + 0.4F * (float) (0.5 + 0.5 * Math.sin(System.currentTimeMillis() / 350.0));
-        float tintStrength = tint.is("Stark") ? 0.38F : tint.is("Leicht") ? 0.18F : 0F;
         BlueprintRenderer.Markers lines = markers.is(MARKERS_OFF) ? BlueprintRenderer.Markers.OFF
                 : markers.is(MARKERS_ALL) ? BlueprintRenderer.Markers.ALL : BlueprintRenderer.Markers.ERRORS;
-        return new BlueprintRenderer.Style(alpha, tintStrength, lines, throughWalls.get());
-    }
-
-    /** Stufen für das Bauplan-Fenster; die Markierungen bleiben dabei, wie der Spieler sie gewählt hat. */
-    public void applyVisibility(String preset) {
-        switch (preset) {
-            case "Kräftig" -> visibility(75, "Leicht", false, false);
-            case "Maximal" -> visibility(95, "Stark", true, true);
-            default -> visibility(50, "Aus", false, false);
-        }
-    }
-
-    private void visibility(int alpha, String tintMode, boolean walls, boolean pulsing) {
-        opacity.set(alpha);
-        tint.set(tintMode);
-        throughWalls.set(walls);
-        pulse.set(pulsing);
-    }
-
-    /** Aktuelle Stufe, oder "Eigene", wenn einzelne Werte angepasst wurden. */
-    public String visibility() {
-        int alpha = opacity.getInt();
-        if (alpha == 50 && tint.is("Aus") && !throughWalls.get() && !pulse.get()) return "Normal";
-        if (alpha == 75 && tint.is("Leicht") && !throughWalls.get() && !pulse.get()) return "Kräftig";
-        if (alpha == 95 && tint.is("Stark") && throughWalls.get() && pulse.get()) return "Maximal";
-        return "Eigene";
+        return new BlueprintRenderer.Style((float) opacity.get() / 100F, lines);
     }
 
     // ---- Aufnehmen: eigenen Bauplan aus der Welt speichern ----
@@ -479,7 +456,7 @@ public final class Blueprints extends Module {
         if (plan == null || !plan.inDimension(mc.level)) return;
         renderer.render(plan, context, renderStyle(), range.getInt());
         if (!infoVisible() || mc.level == null) return;
-        hover = findHover(context);
+        hover = findHover(context.cameraPos(), Vec3.directionFromRotation(context.camera().getXRot(), context.camera().getYRot()));
         if (hover != null) {
             VertexConsumer lines = Render3D.lines(context);
             Render3D.box(context, lines, new AABB(hover.pos()).inflate(0.02), Theme.ACCENT_2);
@@ -531,9 +508,7 @@ public final class Blueprints extends Module {
      * Läuft Block für Block entlang der Blickrichtung (Amanatides-Woo) bis zum ersten echten Block.
      * Bereits korrekt gebaute Zellen werden übersprungen.
      */
-    private Hover findHover(WorldRenderContext context) {
-        Vec3 from = context.cameraPos();
-        Vec3 look = Vec3.directionFromRotation(context.camera().getXRot(), context.camera().getYRot());
+    private Hover findHover(Vec3 from, Vec3 look) {
         double limit = Math.min(HOVER_DISTANCE, range.get());
         Vec3 to = from.add(look.scale(limit));
         BlockHitResult real = mc.level.clip(new ClipContext(from, to, ClipContext.Block.OUTLINE, ClipContext.Fluid.NONE, mc.player));
@@ -563,6 +538,88 @@ public final class Blueprints extends Module {
             else { z += stepZ; t = maxZ; maxZ += deltaZ; }
         }
         return null;
+    }
+
+    // ---- Mittelklick: Item des anvisierten Bauplan-Blocks in die Hand nehmen ----
+
+    private static final int MAIN_INVENTORY = 36;
+    private static final int HOTBAR = 9;
+
+    /**
+     * Vor der Vanilla-Tastenverarbeitung (aus ClientEvents): Zielt der Spieler auf einen noch nicht gebauten
+     * Bauplan-Block, übernimmt Lumen den Mittelklick. Sonst bleibt der Klick für Minecraft liegen, z.B.
+     * wenn ein echter Block näher ist.
+     */
+    public void handlePickKey() {
+        if (!pickBlock.get() || !isEnabled() || plan == null || mc.screen != null || mc.player == null
+                || mc.level == null || mc.gameMode == null || mc.player.isSpectator() || Freecam.active()
+                || !plan.inDimension(mc.level)) return;
+        Hover target = findHover(mc.player.getEyePosition(), mc.player.getViewVector(1F));
+        if (target == null || target.status() != BlueprintPlan.Status.MISSING) return;
+        boolean clicked = false;
+        while (mc.options.keyPickItem.consumeClick()) clicked = true;
+        if (clicked) pick(target);
+    }
+
+    /**
+     * Wie Block auswählen im Überlebensmodus: liegt das Item in der Hotbar, wird dieser Platz gewählt, sonst
+     * wird es in die Hotbar getauscht (wie Zahlentaste im Inventar). Es wird nie ein Item erzeugt.
+     */
+    private void pick(Hover target) {
+        Blueprint.Cell cell = plan.blueprint.cells().get(target.index());
+        BlockState expected = plan.state(cell);
+        if (expected == null) return;
+        Item item = BlueprintPlan.materialItem(expected);
+        if (item == Items.AIR) {
+            Notifications.info("Bauplan", expected.getBlock().getName().getString() + " lässt sich nicht auswählen");
+            return;
+        }
+        LocalPlayer player = mc.player;
+        Inventory inventory = player.getInventory();
+        int slot = findSlot(inventory, item);
+        if (slot < 0) {
+            BlueprintPlan.Material material = plan.material(cell);
+            String text = new ItemStack(item).getHoverName().getString() + " nicht im Inventar";
+            Notifications.warning("Bauplan", material == null ? text : text + " · " + material.remaining() + " noch offen");
+            return;
+        }
+        if (slot < HOTBAR) {
+            inventory.setSelectedSlot(slot);
+            return;
+        }
+        // Tauschen geht nur, wenn kein anderes Menü offen ist und nichts am Mauszeiger hängt.
+        if (player.containerMenu != player.inventoryMenu || !player.inventoryMenu.getCarried().isEmpty()) return;
+        int hotbar = suitableHotbarSlot(inventory);
+        // Inventarplätze 9–35 haben im Spieler-Menü dieselbe Nummer; SWAP mit Knopf = Hotbar-Platz.
+        mc.gameMode.handleInventoryMouseClick(player.inventoryMenu.containerId, slot, hotbar, ClickType.SWAP, player);
+        inventory.setSelectedSlot(hotbar);
+    }
+
+    /** Erst ein unverändertes Item wie bei Vanilla, sonst eines mit z.B. eigenem Namen. Hotbar zuerst. */
+    private static int findSlot(Inventory inventory, Item item) {
+        ItemStack plain = new ItemStack(item);
+        int fallback = -1;
+        for (int i = 0; i < MAIN_INVENTORY; i++) {
+            ItemStack stack = inventory.getItem(i);
+            if (stack.isEmpty() || !stack.is(item)) continue;
+            if (ItemStack.isSameItemAndComponents(plain, stack)) return i;
+            if (fallback < 0) fallback = i;
+        }
+        return fallback;
+    }
+
+    /** Dieselbe Regel wie Minecraft: freier Platz ab dem gewählten, sonst einer ohne Verzauberung, sonst der gewählte. */
+    private static int suitableHotbarSlot(Inventory inventory) {
+        int selected = inventory.getSelectedSlot();
+        for (int i = 0; i < HOTBAR; i++) {
+            int slot = (selected + i) % HOTBAR;
+            if (inventory.getItem(slot).isEmpty()) return slot;
+        }
+        for (int i = 0; i < HOTBAR; i++) {
+            int slot = (selected + i) % HOTBAR;
+            if (!inventory.getItem(slot).isEnchanted()) return slot;
+        }
+        return selected;
     }
 
     @Override public void onLeaveWorld() {

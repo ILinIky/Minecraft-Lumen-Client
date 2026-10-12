@@ -310,7 +310,7 @@ public class ClickGuiScreen extends ClientScreen {
 
         if (!module.hasToggle()) return;
         boolean listening = binding == module;
-        g.drawString(font, "Taste", x, ry + 5, Theme.TEXT_DIM, false);
+        g.drawString(font, module.keyLabel(), x, ry + 5, Theme.TEXT_DIM, false);
         String keyLabel = listening ? "Taste drücken..." : module.getKey() == GLFW.GLFW_KEY_UNKNOWN ? "Keine" : keyName(module.getKey());
         int chipW = font.width(keyLabel) + 12;
         int chipX = x + w - chipW;
