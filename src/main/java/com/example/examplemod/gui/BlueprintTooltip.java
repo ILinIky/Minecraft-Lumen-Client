@@ -18,8 +18,8 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * Kleiner Hinweis neben dem Fadenkreuz, wenn ein noch nicht gebauter Bauplan-Block anvisiert wird:
- * Name, Status, Ausrichtung und wie viele davon im Inventar sind.
+ * Kleiner Hinweis, wenn ein noch nicht gebauter Bauplan-Block anvisiert wird: Name, Status, Ausrichtung
+ * und wie viele davon im Inventar sind. Kompakt oben mittig oder ausführlich neben dem Fadenkreuz.
  */
 public final class BlueprintTooltip {
     private static final int PADDING = 5;
@@ -44,6 +44,7 @@ public final class BlueprintTooltip {
             Map.entry("true", "ja"), Map.entry("false", "nein"), Map.entry("compare", "Vergleichen"), Map.entry("subtract", "Subtrahieren"));
 
     private record Line(String text, int color) {}
+    private static final String SEPARATOR = "  ·  ";
 
     private BlueprintTooltip() {}
 
@@ -57,7 +58,9 @@ public final class BlueprintTooltip {
 
         Blueprint.Cell cell = plan.blueprint.cells().get(hover.index());
         BlockState expected = plan.state(cell);
+        boolean compact = feature.infoPosition.is(Blueprints.POSITION_TOP);
         List<Line> lines = new ArrayList<>();
+        List<Line> stock = new ArrayList<>();
         ItemStack icon = ItemStack.EMPTY;
         String title;
         if (expected == null) {
@@ -96,32 +99,62 @@ public final class BlueprintTooltip {
                 for (int i = 0; i < slots.getContainerSize(); i++) {
                     if (slots.getItem(i).is(material.item)) inventory += slots.getItem(i).getCount();
                 }
-                lines.add(new Line(inventory > 0 ? "Im Inventar: " + inventory : "Nicht im Inventar",
+                stock.add(new Line(inventory > 0 ? "Im Inventar: " + inventory : "Nicht im Inventar",
                         inventory > 0 ? Theme.SUCCESS : Theme.DANGER));
-                lines.add(new Line("Im Bauplan noch offen: " + material.remaining(), Theme.TEXT_MUTED));
+                stock.add(new Line((compact ? "Noch offen: " : "Im Bauplan noch offen: ") + material.remaining(), Theme.TEXT_MUTED));
             }
+        }
+
+        // Kompakt: alle Angaben in zwei Zeilen; am Fadenkreuz: eine Angabe pro Zeile.
+        List<List<Line>> rows = new ArrayList<>();
+        if (compact) {
+            if (!lines.isEmpty()) rows.add(lines);
+            if (!stock.isEmpty()) rows.add(stock);
+        } else {
+            for (Line line : lines) rows.add(List.of(line));
+            for (Line line : stock) rows.add(List.of(line));
         }
 
         Font font = mc.font;
         int textX = icon.isEmpty() ? PADDING + 4 : PADDING + 22;
         int width = font.width(title);
-        for (Line line : lines) width = Math.max(width, font.width(line.text));
+        for (List<Line> row : rows) width = Math.max(width, rowWidth(font, row));
         int w = textX + width + PADDING + 2;
-        int h = PADDING * 2 + 10 + lines.size() * LINE;
-        int x = g.guiWidth() / 2 + 12;
-        int y = g.guiHeight() / 2 + 8;
-        if (x + w > g.guiWidth() - 4) x = g.guiWidth() / 2 - 12 - w;
-        y = Math.min(y, g.guiHeight() - h - 4);
+        int h = PADDING * 2 + 10 + rows.size() * LINE;
+        int x, y;
+        if (compact) {
+            x = Math.max(4, (g.guiWidth() - w) / 2);
+            y = 4;
+        } else {
+            x = g.guiWidth() / 2 + 12;
+            y = g.guiHeight() / 2 + 8;
+            if (x + w > g.guiWidth() - 4) x = g.guiWidth() / 2 - 12 - w;
+            y = Math.min(y, g.guiHeight() - h - 4);
+        }
 
         UiRender.roundRect(g, x, y, w, h, 4, Theme.TOAST_BG);
         UiRender.roundRect(g, x, y, 2, h, 1, hover.status().color);
         if (!icon.isEmpty()) g.renderItem(icon, x + PADDING + 1, y + PADDING - 1);
         g.drawString(font, title, x + textX, y + PADDING + 1, Theme.TEXT, false);
         int ly = y + PADDING + 12;
-        for (Line line : lines) {
-            g.drawString(font, line.text, x + textX, ly, line.color, false);
+        for (List<Line> row : rows) {
+            int lx = x + textX;
+            for (int i = 0; i < row.size(); i++) {
+                if (i > 0) {
+                    g.drawString(font, SEPARATOR, lx, ly, Theme.TEXT_MUTED, false);
+                    lx += font.width(SEPARATOR);
+                }
+                g.drawString(font, row.get(i).text, lx, ly, row.get(i).color, false);
+                lx += font.width(row.get(i).text);
+            }
             ly += LINE;
         }
+    }
+
+    private static int rowWidth(Font font, List<Line> row) {
+        int width = font.width(SEPARATOR) * (row.size() - 1);
+        for (Line line : row) width += font.width(line.text);
+        return width;
     }
 
     private static <T extends Comparable<T>> String value(BlockState state, Property<T> property) {

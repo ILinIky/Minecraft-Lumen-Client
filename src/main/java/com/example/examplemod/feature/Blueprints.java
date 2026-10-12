@@ -13,6 +13,7 @@ import com.example.examplemod.gui.Notifications;
 import com.example.examplemod.module.Category;
 import com.example.examplemod.module.ClientConfig;
 import com.example.examplemod.module.Module;
+import com.example.examplemod.module.ModuleManager;
 import com.example.examplemod.module.Setting;
 import com.example.examplemod.render.BlueprintRenderer;
 import com.example.examplemod.render.WorldRenderContext;
@@ -64,7 +65,11 @@ public final class Blueprints extends Module {
     public final Setting.Mode markers;
     public static final String MARKERS_OFF = "Aus", MARKERS_ERRORS = "Nur Fehler", MARKERS_ALL = "Alles";
     public final Setting.Mode blockInfo;
+    public final Setting.Mode infoPosition;
     public final Setting.Bool pickBlock;
+    public static final String POSITION_TOP = "Oben mittig", POSITION_CROSSHAIR = "Am Fadenkreuz";
+    /** Ob die Blockumrandung von hier eingeschaltet wurde und beim Ausschalten wieder aus soll. */
+    private boolean outlineEnabledByUs;
     private BlueprintPlan plan;
     private Path file;
     private Future<?> pending;
@@ -89,6 +94,8 @@ public final class Blueprints extends Module {
         blockInfo = add(new Setting.Mode("Block-Info",
                 "Name, Ausrichtung und Inventar des anvisierten, noch nicht gebauten Blocks. Taste im Bauplan-Fenster (Platzierung) frei wählbar, Standard: linkes Alt",
                 INFO_HOLD, INFO_HOLD, INFO_TOGGLE, INFO_ALWAYS, INFO_OFF).onChange(() -> infoToggled = false));
+        infoPosition = add(new Setting.Mode("Block-Info-Position", "Wo der Tooltip der Block-Info erscheint",
+                POSITION_TOP, POSITION_TOP, POSITION_CROSSHAIR));
         pickBlock = add(new Setting.Bool("Mittelklick wählt Bauplan-Block",
                 "Mausrad-Klick auf einen noch nicht gebauten Block nimmt das passende Item aus dem Inventar in die Hand, wie Block auswählen im Überlebensmodus",
                 true));
@@ -433,6 +440,12 @@ public final class Blueprints extends Module {
 
     @Override
     protected void onEnable() {
+        // Blockumrandung zeigt, wo der nächste Block landet; nur einschalten, wenn sie aus war.
+        Module outline = ModuleManager.BLOCK_OUTLINE;
+        if (outline != null && !outline.isEnabled()) {
+            outline.setEnabled(true, false);
+            outlineEnabledByUs = true;
+        }
         // Ohne geladenen Plan gibt es nichts anzuzeigen: stattdessen die Dateiauswahl öffnen.
         if (plan == null && !loading && corner1 == null && corner2 == null) {
             mc.execute(() -> {
@@ -442,7 +455,11 @@ public final class Blueprints extends Module {
         }
     }
 
-    @Override protected void onDisable() { saveState(); }
+    @Override protected void onDisable() {
+        saveState();
+        if (outlineEnabledByUs && ModuleManager.BLOCK_OUTLINE != null) ModuleManager.BLOCK_OUTLINE.setEnabled(false, false);
+        outlineEnabledByUs = false;
+    }
 
     @Override public void onTick() {
         if (plan == null) return;

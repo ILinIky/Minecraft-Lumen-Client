@@ -102,12 +102,16 @@ Baupläne aus älteren Minecraft-Versionen werden automatisch umgewandelt, z. B.
 - **Block-Info:** **Alt** halten und auf einen noch nicht gebauten Block zielen: Ein Tooltip zeigt Name, Ausrichtung (z. B. „Norden“), Inventar und Restbedarf.
   Wählbar: *Taste halten* (Standard), *Taste umschalten*, *Immer* oder *Aus*. Die Taste lässt sich direkt im
   Bauplan-Fenster (*Platzierung → Block-Info-Taste*) neu belegen, auch mit Maus-Seitentasten. Doppelte Belegungen werden angezeigt.
+  Position wählbar: kompakt *Oben mittig* (Standard) oder *Am Fadenkreuz*.
+- **Blockumrandung:** Wird der Bauplan eingeschaltet, schaltet Lumen die Blockumrandung mit ein (falls sie aus war) und beim
+  Ausschalten wieder aus. So sieht man immer, wo der nächste Block landet.
 - **Markierungen:** *Aus*, *Nur Fehler* (Standard: 🔴 falscher Block · 🟡 falsche Ausrichtung · 🟣 unbekannt) oder *Alles* (zusätzlich 🔵 fehlt).
 - **Deckkraft** der Vorschau von 15 bis 100 %.
 - **Mittelklick wählt Bauplan-Block** (Standard: an): Mausrad-Klick auf einen noch nicht gebauten Block nimmt das passende Item
   in die Hand, genau wie *Block auswählen* im Überlebensmodus. Liegt es in der Hotbar, wird der Platz gewählt, sonst wird es
   aus dem Inventar in die Hotbar getauscht. Es wird nie ein Item erzeugt, auch nicht im Kreativmodus. Fehlt es, erscheint z. B.
   „Eichenholztreppe nicht im Inventar · 34 noch offen“. Ist ein echter Block näher, gilt der normale Mittelklick.
+  Den anvisierten Geisterblock sieht man nur bei eingeblendeter Block-Info, sonst fehlt seine Umrandung.
 - Der geladene Plan wird **pro Welt gemerkt** und beim nächsten Betreten wiederhergestellt.
 
 **Eigene Baupläne speichern** (Reiter *Aufnehmen*)

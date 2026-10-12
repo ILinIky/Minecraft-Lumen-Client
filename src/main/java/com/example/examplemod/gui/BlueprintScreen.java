@@ -413,18 +413,23 @@ public final class BlueprintScreen extends ClientScreen {
                 infoOn ? Style.PRIMARY : Style.SECONDARY, () -> feature.blockInfo.cycle(hasShiftDown() ? -1 : 1));
         tooltip(g, mx, my, x, y, half, 20, "Block-Info: " + feature.infoLabel()
                 + " · Klicken zum Wechseln (Taste halten → Taste umschalten → Immer → Aus)");
-        boolean marking = !feature.markers.is(Blueprints.MARKERS_OFF);
-        button(g, mx, my, x + half + 4, y, w - half - 4, 20, "Markierungen: " + feature.markers.get(),
-                marking ? Style.PRIMARY : Style.SECONDARY, () -> feature.markers.cycle(hasShiftDown() ? -1 : 1));
-        tooltip(g, mx, my, x + half + 4, y, w - half - 4, 20,
-                "Aus → Nur Fehler (rot/gelb/violett) → Alles (zusätzlich blau = fehlt) · Shift: rückwärts");
+        button(g, mx, my, x + half + 4, y, w - half - 4, 20, "Position: " + feature.infoPosition.get(), Style.SECONDARY,
+                () -> feature.infoPosition.cycle(hasShiftDown() ? -1 : 1));
+        tooltip(g, mx, my, x + half + 4, y, w - half - 4, 20, "Wo der Tooltip der Block-Info erscheint: kompakt oben mittig oder neben dem Fadenkreuz");
         y += 24;
+        boolean marking = !feature.markers.is(Blueprints.MARKERS_OFF);
+        button(g, mx, my, x, y, half, 20, "Markierungen: " + feature.markers.get(),
+                marking ? Style.PRIMARY : Style.SECONDARY, () -> feature.markers.cycle(hasShiftDown() ? -1 : 1));
+        tooltip(g, mx, my, x, y, half, 20,
+                "Aus → Nur Fehler (rot/gelb/violett) → Alles (zusätzlich blau = fehlt) · Shift: rückwärts");
         boolean picking = feature.pickBlock.get();
-        button(g, mx, my, x, y, w, 20, "Mittelklick wählt Bauplan-Block: " + (picking ? "An" : "Aus"),
+        button(g, mx, my, x + half + 4, y, w - half - 4, 20, UiRender.ellipsize(font, "Mittelklick wählt Block: " + (picking ? "An" : "Aus"), w - half - 12),
                 picking ? Style.PRIMARY : Style.SECONDARY, feature.pickBlock::toggle);
-        tooltip(g, mx, my, x, y, w, 20, "Mausrad-Klick auf einen noch nicht gebauten Block nimmt das Item aus deinem Inventar "
+        tooltip(g, mx, my, x + half + 4, y, w - half - 4, 20, "Mausrad-Klick auf einen noch nicht gebauten Block nimmt das Item aus deinem Inventar "
                 + "in die Hand. Es wird nichts erzeugt. Ist ein echter Block näher, gilt der normale Mittelklick.");
         y += 24;
+        y += paragraph(g, "Mittelklick: nur mit eingeblendeter Block-Info sinnvoll. Ohne sie haben die Geisterblöcke keine Umrandung "
+                + "und man sieht nicht, welcher gerade anvisiert ist.", x, y, w, Theme.TEXT_MUTED) + 6;
         y = renderInfoKey(g, mx, my, x, y, w) + 6;
         y += paragraph(g, "Markierungen: Rot = falscher Block · Gelb = Zustand/Ausrichtung · Violett = unbekannt"
                 + " · Blau = fehlt (nur bei „Alles“)", x, y, w, Theme.TEXT_DIM) + 6;
