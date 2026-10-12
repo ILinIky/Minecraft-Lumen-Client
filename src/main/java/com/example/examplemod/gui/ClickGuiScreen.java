@@ -94,9 +94,7 @@ public class ClickGuiScreen extends ClientScreen {
 
     private void renderSidebar(GuiGraphics g, int mouseX, int mouseY) {
         int sx = winX + 1, sy = winY + HEADER_H + 1, sh = winH - HEADER_H - 2;
-        g.fill(sx, sy, sx + SIDEBAR_W, sy + sh - 6, Theme.SIDEBAR);
-        UiRender.roundRect(g, sx, sy + sh - 12, SIDEBAR_W, 12, 5, Theme.SIDEBAR);
-        g.fill(sx + SIDEBAR_W - 6, sy + sh - 12, sx + SIDEBAR_W, sy + sh, Theme.SIDEBAR);
+        UiRender.roundRect(g, sx, sy, SIDEBAR_W, sh, 5, Theme.SIDEBAR);
         g.fill(sx + SIDEBAR_W, sy, sx + SIDEBAR_W + 1, sy + sh, Theme.DIVIDER);
 
         UiRender.scaledText(g, font, "KATEGORIEN", sx + 12, sy + 9, Theme.TEXT_MUTED, 0.75F);

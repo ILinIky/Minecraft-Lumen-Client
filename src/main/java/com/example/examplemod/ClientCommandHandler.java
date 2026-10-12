@@ -38,6 +38,12 @@ public class ClientCommandHandler {
     public static void registerCommands(RegisterClientCommandsEvent event) {
         CommandDispatcher<CommandSourceStack> dispatcher = event.getDispatcher();
 
+        dispatcher.register(Commands.literal("sammelliste").executes(context -> {
+            Minecraft mc = Minecraft.getInstance();
+            mc.schedule(() -> mc.setScreen(new com.example.examplemod.gui.MaterialListScreen(null)));
+            return 1;
+        }));
+
         dispatcher.register(Commands.literal("tpmanager")
                 .then(Commands.literal("delete")
                         .then(Commands.argument("id", IntegerArgumentType.integer(1))

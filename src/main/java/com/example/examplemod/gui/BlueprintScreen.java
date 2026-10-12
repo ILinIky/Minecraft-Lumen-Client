@@ -88,7 +88,12 @@ public final class BlueprintScreen extends ClientScreen {
 
     @Override protected void renderContent(GuiGraphics g, int mx, int my, float partialTick) {
         BlueprintPlan plan = feature.plan();
-        if (plan != seenPlan) { seenPlan = plan; select(plan == null ? Tab.FILES : Tab.PLACEMENT); }
+        if (plan != seenPlan) {
+            boolean keepMaterials = tab == Tab.MATERIALS && seenPlan != null && plan != null
+                    && seenPlan.blueprint.source().equals(plan.blueprint.source());
+            seenPlan = plan;
+            select(keepMaterials ? Tab.MATERIALS : plan == null ? Tab.FILES : Tab.PLACEMENT);
+        }
         drawTitle(g, "Baupläne", null);
         if (searchTab()) fieldBackground(g, search, 6, 4);
         else if (tab == Tab.CAPTURE) fieldBackground(g, nameField, 6, 4);
@@ -464,6 +469,13 @@ public final class BlueprintScreen extends ClientScreen {
 
     private int renderMaterials(GuiGraphics g, int mx, int my, int x, int y, int w, BlueprintPlan plan) {
         y += paragraph(g, summary(plan), x, y, w, Theme.TEXT) + 6;
+        button(g, mx, my, x, y, (w - 4) / 2, 20, "Gesamte Liste anheften", Style.PRIMARY, () -> {
+            ModuleManager.MATERIAL_LIST.pinPlan();
+            Notifications.success("Sammelliste angeheftet", "Gesamter offener Bedarf · aktualisiert sich auch beim Materialtausch");
+        });
+        button(g, mx, my, x + (w - 4) / 2 + 4, y, (w - 4) / 2, 20, "Ersetzungen verwalten", Style.SECONDARY,
+                () -> minecraft.setScreen(new BlueprintMaterialsScreen(this)));
+        y += 27;
         y += paragraph(g, "Gesamter Plan, unabhängig vom Ebenenfilter. Offen enthält auch ungeprüfte Positionen. Inventar zählt lose Items, keine Kisteninhalte.", x, y, w, Theme.TEXT_MUTED) + 8;
         if (!feature.isEnabled()) y += paragraph(g, "Abgleich pausiert: Vorschau unter Platzierung einschalten.", x, y, w, Theme.WARNING) + 8;
         if (!plan.inDimension(minecraft.level)) y += paragraph(g, "Andere Dimension: Die Zahlen zeigen den letzten Abgleich.", x, y, w, Theme.WARNING) + 8;
@@ -487,6 +499,13 @@ public final class BlueprintScreen extends ClientScreen {
             UiRender.scaledText(g, font, UiRender.ellipsize(font, missing, (int) ((w - 12) / 0.8F)), x + 6, y + 32, Theme.TEXT_MUTED, 0.8F);
             tooltip(g, mx, my, x, y, w, 43, material.name + " · " + totals + " · " + missing);
             y += 47;
+            if (material.item != Items.AIR) {
+                button(g, mx, my, x, y, w, 18, "Material ersetzen", Style.SECONDARY, () ->
+                    minecraft.setScreen(new ItemPickerScreen(this, "Ersatzblock wählen", item -> item instanceof net.minecraft.world.item.BlockItem,
+                        item -> feature.replaceDisplayedMaterial(plan, material.item,
+                            net.minecraft.core.registries.BuiltInRegistries.BLOCK.getKey(((net.minecraft.world.item.BlockItem)item).getBlock()).toString()))));
+                y += 24;
+            }
         }
         y += paragraph(g, "Orientierung und Blockzustände zählen mit. Bedarf ist eine Bauhilfe: Wasser, Redstone-Zustände und Spezialmechaniken können Nacharbeit benötigen.", x, y, w, Theme.TEXT_MUTED) + 6;
         return y;

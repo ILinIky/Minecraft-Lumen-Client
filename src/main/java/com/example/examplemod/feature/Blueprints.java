@@ -71,6 +71,8 @@ public final class Blueprints extends Module {
     /** Ob die Blockumrandung von hier eingeschaltet wurde und beim Ausschalten wieder aus soll. */
     private boolean outlineEnabledByUs;
     private BlueprintPlan plan;
+    private Blueprint sourceBlueprint;
+    private final java.util.Map<String, String> replacements = new java.util.TreeMap<>();
     private Path file;
     private Future<?> pending;
     private int generation;
@@ -81,7 +83,8 @@ public final class Blueprints extends Module {
 
     /** Platzierung, die beim Wiederherstellen statt "vor dem Spieler" übernommen wird. */
     private record Placement(BlockPos origin, String dimension, int turns, boolean mirrored,
-                             BlueprintPlan.Layers layers, int layer, boolean onlyMissing, boolean visible, int[] accepted) {}
+                             BlueprintPlan.Layers layers, int layer, boolean onlyMissing, boolean visible, int[] accepted,
+                             java.util.Map<String, String> replacements) {}
 
     public Blueprints() {
         super("blueprints", "Baupläne", "Transparente Blockvorschau, Ebenen und Materialbedarf", Category.WORLD);
@@ -133,7 +136,9 @@ public final class Blueprints extends Module {
                         return;
                     }
                     try {
-                        BlueprintPlan loaded = new BlueprintPlan(data, anchor, dimension);
+                        var restored = placement == null ? java.util.Map.<String, String>of() : placement.replacements();
+                        Blueprint replaced = restored.isEmpty() ? data : com.example.examplemod.blueprint.BlueprintMaterials.remap(data, restored, BlueprintPlan::replacementState);
+                        BlueprintPlan loaded = new BlueprintPlan(replaced, anchor, dimension);
                         if (placement != null) {
                             loaded.setTransform(placement.turns(), placement.mirrored());
                             loaded.layers = placement.layers();
@@ -142,6 +147,9 @@ public final class Blueprints extends Module {
                             loaded.restoreAccepted(placement.accepted());
                         }
                         plan = loaded;
+                        sourceBlueprint = data;
+                        replacements.clear();
+                        replacements.putAll(restored);
                         file = path;
                         renderer.clear();
                         setEnabled(placement == null || placement.visible(), false);
@@ -175,6 +183,8 @@ public final class Blueprints extends Module {
         if (pending != null) pending.cancel(true);
         loading = false;
         plan = null;
+        sourceBlueprint = null;
+        replacements.clear();
         file = null;
         savedSignature = null;
         renderer.clear();
@@ -382,7 +392,7 @@ public final class Blueprints extends Module {
         if (plan == null || file == null) return null;
         BlockPos o = plan.origin();
         return file + "|" + o.getX() + "," + o.getY() + "," + o.getZ() + "|" + plan.turns() + plan.mirrored()
-                + "|" + plan.layers + plan.layer + plan.onlyMissing + isEnabled() + "|" + plan.acceptedVersion();
+                + "|" + plan.layers + plan.layer + plan.onlyMissing + isEnabled() + "|" + plan.acceptedVersion() + "|" + replacements;
     }
 
     public void saveState() {
@@ -405,6 +415,9 @@ public final class Blueprints extends Module {
         com.google.gson.JsonArray accepted = new com.google.gson.JsonArray();
         for (int cell : plan.acceptedCells()) accepted.add(cell);
         json.add("accepted", accepted);
+        JsonObject swaps = new JsonObject();
+        replacements.forEach(swaps::addProperty);
+        json.add("replacements", swaps);
         ClientConfig.writeAtomically(target, json.toString());
         savedSignature = signature;
     }
@@ -438,15 +451,70 @@ public final class Blueprints extends Module {
                 accepted = new int[array.size()];
                 for (int i = 0; i < accepted.length; i++) accepted[i] = array.get(i).getAsInt();
             }
+            java.util.Map<String, String> swaps = new java.util.TreeMap<>();
+            if (json.has("replacements")) json.getAsJsonObject("replacements").entrySet().forEach(e -> swaps.put(e.getKey(), e.getValue().getAsString()));
             Placement placement = new Placement(
                     new BlockPos(json.get("x").getAsInt(), json.get("y").getAsInt(), json.get("z").getAsInt()),
                     json.get("dimension").getAsString(), json.get("turns").getAsInt(), json.get("mirrored").getAsBoolean(),
                     layers, json.get("layer").getAsInt(), json.get("onlyMissing").getAsBoolean(), json.get("visible").getAsBoolean(),
-                    accepted);
+                    accepted, swaps);
             load(path, placement);
         } catch (IOException | RuntimeException failure) {
             ExampleMod.LOGGER.warn("Bauplan-Zustand ist ungültig: {}", target, failure);
         }
+    }
+
+    public Blueprint sourceBlueprint() { return sourceBlueprint; }
+    public java.util.Map<String, String> replacements() { return java.util.Collections.unmodifiableMap(replacements); }
+    public boolean canReplace(String source, String target) {
+        if (sourceBlueprint == null) return false;
+        boolean found = false;
+        for (var state : sourceBlueprint.palette()) if (state.name().equals(source)) {
+            found = true;
+            if (!BlueprintPlan.replacementCompatible(state, target)) return false;
+        }
+        return found;
+    }
+    public void replaceMaterial(String source, String target) {
+        if (plan == null || sourceBlueprint == null || loading) return;
+        var next = new java.util.TreeMap<>(replacements);
+        if (source.equals(target)) next.remove(source); else next.put(source, target);
+        applyReplacements(next);
+    }
+    /** A displayed material may represent several original block types (e.g. standing/wall variants). */
+    public void replaceDisplayedMaterial(BlueprintPlan expectedPlan, Item material, String target) {
+        if (plan != expectedPlan || sourceBlueprint == null || loading) {
+            Notifications.warning("Material ersetzen", "Der Bauplan hat sich geändert. Bitte das Material erneut wählen.");
+            return;
+        }
+        var next = new java.util.TreeMap<>(replacements);
+        for (int i = 0; i < sourceBlueprint.palette().size(); i++) {
+            if (!plan.paletteUsed(i) || plan.materialForPalette(i).item != material) continue;
+            String source = sourceBlueprint.palette().get(i).name();
+            if (source.equals(target)) next.remove(source); else next.put(source, target);
+        }
+        applyReplacements(next);
+    }
+    public void resetMaterials() { if (plan != null && !replacements.isEmpty()) applyReplacements(java.util.Map.of()); }
+    private void applyReplacements(java.util.Map<String, String> next) {
+        try {
+            Blueprint data = com.example.examplemod.blueprint.BlueprintMaterials.remap(sourceBlueprint, next, BlueprintPlan::replacementState);
+            BlueprintPlan updated = new BlueprintPlan(data, plan);
+            updated.setTransform(plan.turns(), plan.mirrored());
+            updated.layers = plan.layers; updated.layer = plan.layer; updated.onlyMissing = plan.onlyMissing;
+            // Accepted deviations on changed materials must be checked again; other exceptions survive.
+            int[] accepted = java.util.Arrays.stream(plan.acceptedCells()).filter(i -> {
+                int state = sourceBlueprint.cells().get(i).state();
+                return plan.blueprint.palette().get(state).equals(data.palette().get(state));
+            }).toArray();
+            updated.restoreAccepted(accepted);
+            plan = updated;
+            replacements.clear(); replacements.putAll(next);
+            renderer.clear(); hover = null; savedSignature = null;
+            saveState();
+            if (ModuleManager.MATERIAL_LIST != null) ModuleManager.MATERIAL_LIST.refresh();
+            Notifications.success("Bauplan-Material", "Vorschau und Bedarf aktualisiert · Originaldatei bleibt erhalten");
+        } catch (RuntimeException failure) { failed(failure); }
     }
 
     @Override

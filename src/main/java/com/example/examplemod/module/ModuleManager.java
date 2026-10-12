@@ -57,6 +57,8 @@ public final class ModuleManager {
     public static Tooltips TOOLTIPS;
     public static Minimap MINIMAP;
     public static Blueprints BLUEPRINTS;
+    public static com.example.examplemod.feature.MaterialList MATERIAL_LIST;
+    public static com.example.examplemod.feature.PlayerRadar PLAYER_RADAR;
 
     private ModuleManager() {}
 
@@ -66,6 +68,7 @@ public final class ModuleManager {
         XRAY = register(new XRay());
         BLOCK_ESP = register(new BlockEsp());
         ENTITY_ESP = register(new EntityEsp());
+        PLAYER_RADAR = register(new com.example.examplemod.feature.PlayerRadar());
         FULLBRIGHT = register(new Fullbright());
         LIGHT_LEVEL = register(new LightLevel());
         CHUNK_BORDERS = register(new ChunkBorders());
@@ -80,6 +83,7 @@ public final class ModuleManager {
         AUTO_DROP = register(new AutoDrop());
         WAYPOINTS = register(new Waypoints());
         BLUEPRINTS = register(new Blueprints());
+        MATERIAL_LIST = register(new com.example.examplemod.feature.MaterialList());
         CHEST_MEMORY = register(new ChestMemory());
         // Vor dem HUD, weil dessen Elemente die Minimap brauchen.
         MINIMAP = register(new Minimap());

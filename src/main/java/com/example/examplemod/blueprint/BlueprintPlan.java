@@ -53,8 +53,9 @@ public final class BlueprintPlan {
     private final boolean[] unsupported;
     private final Material[] materialByState;
     private final int[] units;
-    private final Long2IntOpenHashMap index = new Long2IntOpenHashMap();
-    private final Long2ObjectOpenHashMap<IntArrayList> sections = new Long2ObjectOpenHashMap<>();
+    private final Long2IntOpenHashMap index;
+    private final Long2ObjectOpenHashMap<IntArrayList> sections;
+    private final int[] paletteCounts;
     private final byte[] status;
     /** Vom Spieler übernommene Abweichungen (Zellindex): jeder echte Block zählt dort als richtig. */
     private final java.util.BitSet accepted = new java.util.BitSet();
@@ -70,6 +71,18 @@ public final class BlueprintPlan {
     public boolean onlyMissing = true;
 
     public BlueprintPlan(Blueprint blueprint, BlockPos origin, String dimension) {
+        this(blueprint, origin, dimension, null);
+    }
+
+    /** Palette-only edits reuse immutable spatial indices, avoiding another multi-million-cell index build. */
+    public BlueprintPlan(Blueprint blueprint, BlueprintPlan previous) {
+        this(blueprint, previous.origin(), previous.dimension, previous);
+    }
+
+    private BlueprintPlan(Blueprint blueprint, BlockPos origin, String dimension, BlueprintPlan previous) {
+        if (previous != null && (blueprint.cells() != previous.blueprint.cells()
+                || blueprint.palette().size() != previous.blueprint.palette().size()))
+            throw new IllegalArgumentException("Materialtausch darf keine Positionen ändern");
         this.blueprint = blueprint;
         this.origin = origin.immutable();
         this.dimension = dimension;
@@ -104,13 +117,20 @@ public final class BlueprintPlan {
             units[i] = original[i] == null ? 1 : materialUnits(original[i]);
         }
         if (unknown > 0) warnings.add(unknown + " unbekannte Blockzustände: violett markiert, nicht als korrekt gewertet.");
-        index.defaultReturnValue(-1);
-        for (int i = 0; i < blueprint.cells().size(); i++) {
-            Blueprint.Cell cell = blueprint.cells().get(i);
-            index.put(key(cell.x(), cell.y(), cell.z()), i);
-            sections.computeIfAbsent(key(cell.x() >> 4, cell.y() >> 4, cell.z() >> 4), k -> new IntArrayList()).add(i);
-            materialByState[cell.state()].total += units[cell.state()];
+        if (previous != null) {
+            index = previous.index; sections = previous.sections; paletteCounts = previous.paletteCounts;
+        } else {
+            index = new Long2IntOpenHashMap(); sections = new Long2ObjectOpenHashMap<>();
+            paletteCounts = new int[paletteSize];
+            index.defaultReturnValue(-1);
+            for (int i = 0; i < blueprint.cells().size(); i++) {
+                Blueprint.Cell cell = blueprint.cells().get(i);
+                index.put(key(cell.x(), cell.y(), cell.z()), i);
+                sections.computeIfAbsent(key(cell.x() >> 4, cell.y() >> 4, cell.z() >> 4), k -> new IntArrayList()).add(i);
+                paletteCounts[cell.state()]++;
+            }
         }
+        for (int i = 0; i < paletteSize; i++) materialByState[i].total += paletteCounts[i] * units[i];
         materials = materialsById.values().stream().filter(m -> m.total > 0)
                 .sorted(Comparator.comparingInt((Material m) -> m.total).reversed().thenComparing(m -> m.name)).toList();
         status = new byte[blueprint.cells().size()];
@@ -119,6 +139,24 @@ public final class BlueprintPlan {
 
     private static <T extends Comparable<T>> BlockState applyProperty(BlockState state, Property<T> key, String value) {
         return key.getValue(value).map(v -> state.setValue(key, v)).orElse(null);
+    }
+
+    /** Every placeable target is allowed. Unsupported source properties fall back to target defaults. */
+    public static boolean replacementCompatible(Blueprint.State source, String target) {
+        ResourceLocation id = ResourceLocation.tryParse(target);
+        if (source.air() || id == null || !BuiltInRegistries.BLOCK.containsKey(id)) return false;
+        BlockState state = BuiltInRegistries.BLOCK.getValue(id).defaultBlockState();
+        if (state.isAir() || state.getBlock().asItem() == Items.AIR) return false;
+        return true;
+    }
+
+    public static Blueprint.State replacementState(Blueprint.State source, String target) {
+        if (!replacementCompatible(source, target)) throw new IllegalArgumentException("Ungültiger Ersatzblock: " + target);
+        BlockState state = BuiltInRegistries.BLOCK.getValue(ResourceLocation.parse(target)).defaultBlockState();
+        return BlueprintMaterials.transfer(source, target, (name, value) -> {
+            Property<?> property = state.getBlock().getStateDefinition().getProperty(name);
+            return property != null && applyProperty(state, property, value) != null;
+        });
     }
 
     /** Item, mit dem der Block gesetzt wird; Flüssigkeiten per Eimer. */
@@ -149,6 +187,7 @@ public final class BlueprintPlan {
     }
 
     public BlockPos origin() { return origin; }
+    public boolean paletteUsed(int index) { return paletteCounts[index] > 0; }
     public int turns() { return turns; }
     public boolean mirrored() { return mirrored; }
     public BlueprintTransform transform() { return new BlueprintTransform(blueprint.sizeX(), blueprint.sizeZ(), turns, mirrored); }
@@ -207,6 +246,7 @@ public final class BlueprintPlan {
     }
 
     public Material material(Blueprint.Cell cell) { return materialByState[cell.state()]; }
+    public Material materialForPalette(int index) { return materialByState[index]; }
     public boolean unsupported(Blueprint.Cell cell) { return unsupported[cell.state()]; }
 
     private static long key(int x, int y, int z) { return ((long) x << 32) | ((long) y << 16) | z; }

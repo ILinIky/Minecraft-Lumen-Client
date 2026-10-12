@@ -33,7 +33,7 @@ public final class HudElements {
 
     public static List<HudElement> create(Hud hud) {
         return List.of(new Watermark(hud), new Coordinates(hud), new Ping(hud), new ModuleList(hud),
-                new Compass(hud), new Armor(hud), new MinimapElement(ModuleManager.MINIMAP));
+                new Compass(hud), new Armor(hud), new MinimapElement(ModuleManager.MINIMAP), new MaterialListElement(hud.materialList), new PlayerRadarElement(hud.playerRadar));
     }
 
     private static boolean shadow() { return !Theme.light; }

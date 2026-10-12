@@ -65,7 +65,7 @@ public abstract class ClientScreen extends Screen {
         if (isModal() && parent != null) {
             parent.renderBackground(g, -1000, -1000, partialTick);
             parent.render(g, -1000, -1000, partialTick);
-            g.fill(0, 0, width, height, Theme.alpha(Theme.OVERLAY | 0x30000000, openProgress()));
+            g.fill(0, 0, width, height, Theme.alpha(Theme.OVERLAY, openProgress()));
             return;
         }
         g.fill(0, 0, width, height, Theme.alpha(Theme.OVERLAY, openProgress()));
@@ -176,8 +176,8 @@ public abstract class ClientScreen extends Screen {
             default -> fill = hover ? Theme.CARD_HOVER : Theme.CARD;
         }
         if (style == Style.DANGER && !hover) text = Theme.DANGER;
-        if ((fill >>> 24) != 0) UiRender.roundRect(g, x, y, w, h, 4, fill);
         if (style == Style.SECONDARY) UiRender.panel(g, x, y, w, h, 4, fill, hover ? Theme.SWITCH_OFF_HOVER : Theme.FIELD_BORDER);
+        else if ((fill >>> 24) != 0) UiRender.roundRect(g, x, y, w, h, 4, fill);
         String shown = UiRender.ellipsize(font, label, w - 6);
         g.drawString(font, shown, x + (w - font.width(shown)) / 2, y + (h - 8) / 2, text, false);
         addHit(x, y, w, h, (mx, my, b) -> action.run());
@@ -191,11 +191,19 @@ public abstract class ClientScreen extends Screen {
     }
 
     protected EditBox borderlessField(int x, int y, int w, String hint, int maxLength) {
-        EditBox box = new EditBox(font, x, y, w, 10, Component.literal(hint));
+        EditBox box = new EditBox(font, x, y, w, 10, Component.literal(hint)) {
+            @Override public void renderWidget(GuiGraphics graphics, int mouseX, int mouseY, float partialTick) {
+                setTextColor(Theme.TEXT);
+                setTextColorUneditable(Theme.TEXT_DIM);
+                setHint(Component.literal(hint).withColor(Theme.TEXT_DIM));
+                super.renderWidget(graphics, mouseX, mouseY, partialTick);
+            }
+        };
         box.setBordered(false);
+        box.setTextShadow(false);
         box.setMaxLength(maxLength);
         box.setTextColor(Theme.TEXT);
-        box.setHint(Component.literal(hint).withColor(Theme.TEXT_MUTED));
+        box.setHint(Component.literal(hint).withColor(Theme.TEXT_DIM));
         return box;
     }
 

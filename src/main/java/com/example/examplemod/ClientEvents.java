@@ -146,7 +146,18 @@ public class ClientEvents {
     /** Zoom: Mausrad ändert die Stärke statt den Hotbar-Platz. */
     @SubscribeEvent
     public static boolean onMouseScroll(InputEvent.MouseScrollingEvent event) {
+        Minecraft mc = Minecraft.getInstance();
+        if (mc.screen == null && (InputConstants.isKeyDown(mc.getWindow().getWindow(), GLFW.GLFW_KEY_LEFT_SHIFT)
+                || InputConstants.isKeyDown(mc.getWindow().getWindow(), GLFW.GLFW_KEY_RIGHT_SHIFT))
+                && com.example.examplemod.gui.hud.HudRenderer.scrollMaterials(event.getDeltaY(), null, null)) return true;
         return ModuleManager.ZOOM != null && ModuleManager.ZOOM.onScroll(event.getDeltaY());
+    }
+
+    @SubscribeEvent
+    public static boolean onHudListScroll(net.minecraftforge.client.event.ScreenEvent.MouseScrolled.Pre event) {
+        if (!(event.getScreen() instanceof net.minecraft.client.gui.screens.ChatScreen)
+                && !(event.getScreen() instanceof com.example.examplemod.gui.hud.HudEditorScreen)) return false;
+        return com.example.examplemod.gui.hud.HudRenderer.scrollMaterials(event.getDeltaY(), event.getMouseX(), event.getMouseY());
     }
 
     /** Modul-Tasten aus dem Client-Menü (nicht zusammen mit F3-Kombinationen). */
