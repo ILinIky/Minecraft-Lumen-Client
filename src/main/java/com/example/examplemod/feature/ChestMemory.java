@@ -94,10 +94,21 @@ public class ChestMemory extends Module {
     @Override
     public boolean showInModuleList() { return false; }
 
-    /** Die eigene Taste öffnet die Suche, statt das Gedächtnis auszuschalten. */
+    /** Von der eigenen Taste angefordert; geöffnet wird erst im nächsten Tick (siehe ClientEvents). */
+    private boolean searchRequested;
+
+    /**
+     * Die eigene Taste öffnet die Suche, statt das Gedächtnis auszuschalten. Nicht sofort öffnen:
+     * das Zeichen der Taste käme sonst direkt danach im Suchfeld an.
+     */
     @Override
-    public void onKeyPressed() {
-        if (mc.screen == null && mc.player != null) mc.setScreen(new ChestSearchScreen(null, ""));
+    public void onKeyPressed() { searchRequested = true; }
+
+    /** {@code true}, wenn die Taste seit dem letzten Aufruf gedrückt wurde. */
+    public boolean consumeSearchRequest() {
+        boolean requested = searchRequested;
+        searchRequested = false;
+        return requested;
     }
 
     @Override

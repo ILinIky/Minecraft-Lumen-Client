@@ -75,9 +75,9 @@ public class ClientEvents {
         while (ClientKeybinds.BLUEPRINT_LAYER_DOWN.consumeClick()) {
             if (mc.player != null) ModuleManager.BLUEPRINTS.stepLayer(-1);
         }
-        while (ClientKeybinds.CHEST_SEARCH.consumeClick()) {
-            if (mc.screen == null && mc.player != null) mc.setScreen(new ChestSearchScreen(null, ""));
-        }
+        boolean chestSearch = ModuleManager.CHEST_MEMORY != null && ModuleManager.CHEST_MEMORY.consumeSearchRequest();
+        while (ClientKeybinds.CHEST_SEARCH.consumeClick()) chestSearch = true;
+        if (chestSearch && mc.screen == null && mc.player != null) mc.setScreen(new ChestSearchScreen(null, ""));
         while (ClientKeybinds.BLUEPRINT_INFO.consumeClick()) {
             if (mc.player != null && mc.screen == null) ModuleManager.BLUEPRINTS.onInfoKey();
         }
