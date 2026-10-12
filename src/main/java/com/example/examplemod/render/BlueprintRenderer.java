@@ -58,6 +58,7 @@ public final class BlueprintRenderer {
     private BlockPos anchor;
     private int turns, layer, range;
     private boolean mirrored, onlyMissing;
+    private BlueprintPlan.Material focus;
     private BlueprintPlan.Layers layers;
     private boolean limited;
     private final RandomSource random = RandomSource.create();
@@ -73,13 +74,13 @@ public final class BlueprintRenderer {
         if (level == null) return;
         long now = Util.getMillis();
         if (previous != plan || now - refreshed > 200 || !plan.origin().equals(anchor) || turns != plan.turns()
-                || mirrored != plan.mirrored() || layers != plan.layers || layer != plan.layer || range != distance || onlyMissing != plan.onlyMissing) {
+                || mirrored != plan.mirrored() || layers != plan.layers || layer != plan.layer || range != distance || onlyMissing != plan.onlyMissing || focus != plan.focus) {
             List<Candidate> nearby = new ArrayList<>();
             var indices = plan.nearby(BlockPos.containing(context.cameraPos()), distance + 2);
             for (int n = 0; n < indices.size(); n++) {
                 int i = indices.getInt(n);
                 Blueprint.Cell cell = plan.blueprint.cells().get(i);
-                if (!plan.visibleLayer(cell.y())) continue;
+                if (!plan.visibleLayer(cell.y()) || !plan.focused(cell)) continue;
                 BlockPos pos = plan.position(cell);
                 double d = Vec3.atCenterOf(pos).distanceToSqr(context.cameraPos());
                 if (d > (double) distance * distance || !level.hasChunk(pos.getX() >> 4, pos.getZ() >> 4)) continue;
@@ -92,7 +93,7 @@ public final class BlueprintRenderer {
             // Back-to-front, additionally sorted per quad by the translucent RenderType.
             candidates.sort(Comparator.comparingDouble(Candidate::distance).reversed());
             previous = plan; anchor = plan.origin(); turns = plan.turns(); mirrored = plan.mirrored();
-            layer = plan.layer; layers = plan.layers; range = distance; onlyMissing = plan.onlyMissing; refreshed = now;
+            layer = plan.layer; layers = plan.layers; range = distance; onlyMissing = plan.onlyMissing; focus = plan.focus; refreshed = now;
         }
         PreviewWorld view = new PreviewWorld(plan, level);
         var poses = context.poseStack();

@@ -68,6 +68,8 @@ public final class BlueprintPlan {
     public Layers layers = Layers.ALL;
     public int layer;
     public boolean onlyMissing = true;
+    /** Nur dieses Material in der Vorschau zeigen; {@code null} = alle. */
+    public Material focus;
 
     public BlueprintPlan(Blueprint blueprint, BlockPos origin, String dimension) {
         this.blueprint = blueprint;
@@ -207,6 +209,8 @@ public final class BlueprintPlan {
     }
 
     public Material material(Blueprint.Cell cell) { return materialByState[cell.state()]; }
+    /** Ob die Zelle zum gewählten Material gehört (ohne Auswahl immer). */
+    public boolean focused(Blueprint.Cell cell) { return focus == null || materialByState[cell.state()] == focus; }
     public boolean unsupported(Blueprint.Cell cell) { return unsupported[cell.state()]; }
 
     private static long key(int x, int y, int z) { return ((long) x << 32) | ((long) y << 16) | z; }

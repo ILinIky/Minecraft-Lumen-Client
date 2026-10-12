@@ -556,7 +556,7 @@ public final class Blueprints extends Module {
         for (int steps = 0; steps < 128 && t <= limit; steps++) {
             pos.set(x, y, z);
             int index = plan.cellAt(pos);
-            if (index >= 0) {
+            if (index >= 0 && plan.focused(plan.blueprint.cells().get(index))) {
                 BlueprintPlan.Status status = plan.compare(mc.level, index, pos);
                 if (status != BlueprintPlan.Status.CORRECT && status != BlueprintPlan.Status.UNCHECKED) {
                     return new Hover(index, pos.immutable(), status);
@@ -623,6 +623,16 @@ public final class Blueprints extends Module {
         return ClientKeybinds.BLUEPRINT_ACCEPT == null ? "-" : ClientKeybinds.BLUEPRINT_ACCEPT.getTranslatedKeyMessage().getString();
     }
 
+    // ---- Materialfilter: nur ein Material in der Vorschau ----
+
+    /** Nur dieses Material zeigen; dasselbe nochmal oder {@code null} zeigt wieder alle. */
+    public void focusMaterial(BlueprintPlan.Material material) {
+        if (plan == null) return;
+        plan.focus = plan.focus == material ? null : material;
+        if (plan.focus == null) Notifications.info("Bauplan", "Alle Materialien angezeigt");
+        else Notifications.info("Bauplan", "Nur " + plan.focus.name + " angezeigt");
+    }
+
     // ---- Mittelklick: Item des anvisierten Bauplan-Blocks in die Hand nehmen ----
 
     private static final int MAIN_INVENTORY = 36;
@@ -657,11 +667,19 @@ public final class Blueprints extends Module {
             Notifications.info("Bauplan", expected.getBlock().getName().getString() + " lässt sich nicht auswählen");
             return;
         }
+        takeIntoHand(item, plan.material(cell));
+    }
+
+    /**
+     * Item aus dem Inventar in die Hand nehmen (Mittelklick und Materialliste). Es wird nie ein Item erzeugt.
+     * {@code material} nur für die Meldung "noch offen", darf {@code null} sein.
+     */
+    public void takeIntoHand(Item item, BlueprintPlan.Material material) {
         LocalPlayer player = mc.player;
+        if (player == null || mc.gameMode == null || item == Items.AIR) return;
         Inventory inventory = player.getInventory();
         int slot = findSlot(inventory, item);
         if (slot < 0) {
-            BlueprintPlan.Material material = plan.material(cell);
             String text = new ItemStack(item).getHoverName().getString() + " nicht im Inventar";
             Notifications.warning("Bauplan", material == null ? text : text + " · " + material.remaining() + " noch offen");
             return;
@@ -717,6 +735,7 @@ public final class Blueprints extends Module {
     @Override public String getHudInfo() {
         if (plan == null) return corner1 != null || corner2 != null ? "Aufnahme" : "Kein Plan";
         String progress = plan.count(BlueprintPlan.Status.CORRECT) + "/" + plan.blueprint.cells().size();
-        return plan.layers == BlueprintPlan.Layers.ALL ? progress : progress + " · E" + (plan.layer + 1);
+        if (plan.layers != BlueprintPlan.Layers.ALL) progress += " · E" + (plan.layer + 1);
+        return plan.focus == null ? progress : progress + " · Filter";
     }
 }

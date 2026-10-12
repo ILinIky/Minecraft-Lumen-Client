@@ -41,6 +41,10 @@ public final class BlueprintScreen extends ClientScreen {
     /** Wartet auf die neue Taste für die Block-Info. */
     /** Taste, die gerade neu belegt wird, sonst {@code null}. */
     private KeyMapping binding;
+    /** Rechtsklick-Menü der Materialliste: Material und Position, sonst {@code null}. */
+    private BlueprintPlan.Material menuMaterial;
+    private int menuX, menuY;
+    private static final int MENU_W = 118, MENU_ROW = 13;
     private List<Path> files = List.of();
     private Tab tab;
     private BlueprintPlan seenPlan;
@@ -79,6 +83,7 @@ public final class BlueprintScreen extends ClientScreen {
 
     private void select(Tab value) {
         tab = value;
+        menuMaterial = null;
         scroll.reset();
         query = "";
         if (search != null) { search.setValue(""); search.setVisible(searchTab()); setFocused(null); }
@@ -197,6 +202,10 @@ public final class BlueprintScreen extends ClientScreen {
 
     @Override
     public boolean keyPressed(int keyCode, int scanCode, int modifiers) {
+        if (menuMaterial != null && keyCode == GLFW.GLFW_KEY_ESCAPE) {
+            menuMaterial = null;
+            return true;
+        }
         if (binding != null) {
             KeyMapping key = binding;
             binding = null;
@@ -211,6 +220,14 @@ public final class BlueprintScreen extends ClientScreen {
 
     @Override
     public boolean mouseClicked(double mouseX, double mouseY, int button) {
+        // Offenes Menü: Klick daneben schließt es nur.
+        if (menuMaterial != null) {
+            int h = menuEntries(menuMaterial).size() * MENU_ROW + 4;
+            if (!UiRender.inside(mouseX, mouseY, menuX, menuY, MENU_W, h)) {
+                menuMaterial = null;
+                return true;
+            }
+        }
         // Maus-Seitentasten und Mausrad-Klick lassen sich belegen; Links-/Rechtsklick bricht ab.
         if (binding != null && button >= GLFW.GLFW_MOUSE_BUTTON_MIDDLE) {
             KeyMapping key = binding;
@@ -319,8 +336,53 @@ public final class BlueprintScreen extends ClientScreen {
         return dot > 0 ? name.substring(0, dot) : name;
     }
 
+    // ---- Rechtsklick-Menü der Materialliste ----
+
+    private void openMenu(BlueprintPlan.Material material, int x, int y) {
+        menuMaterial = material;
+        menuX = Math.min(x, width - MENU_W - 4);
+        menuY = Math.min(y, height - menuEntries(material).size() * MENU_ROW - 8);
+    }
+
+    private record MenuEntry(String label, Runnable action) {}
+
+    private List<MenuEntry> menuEntries(BlueprintPlan.Material material) {
+        List<MenuEntry> entries = new java.util.ArrayList<>();
+        BlueprintPlan plan = feature.plan();
+        boolean focused = plan != null && plan.focus == material;
+        entries.add(new MenuEntry(focused ? "Alle anzeigen" : "Nur dieses anzeigen", () -> feature.focusMaterial(material)));
+        if (material.item != Items.AIR) {
+            entries.add(new MenuEntry("In die Hand nehmen", () -> feature.takeIntoHand(material.item, material)));
+            if (ModuleManager.CHEST_MEMORY != null && ModuleManager.CHEST_MEMORY.isEnabled()) {
+                entries.add(new MenuEntry("In Kisten suchen", () -> minecraft.setScreen(new ChestSearchScreen(this, material.name))));
+            }
+        }
+        return entries;
+    }
+
+    private void renderMenu(GuiGraphics g, int mx, int my) {
+        if (menuMaterial == null) return;
+        List<MenuEntry> entries = menuEntries(menuMaterial);
+        int h = entries.size() * MENU_ROW + 4;
+        g.nextStratum();
+        UiRender.shadow(g, menuX, menuY, MENU_W, h, 4);
+        UiRender.panel(g, menuX, menuY, MENU_W, h, 4, Theme.WINDOW, Theme.WINDOW_BORDER);
+        int ry = menuY + 2;
+        for (MenuEntry entry : entries) {
+            boolean hover = UiRender.inside(mx, my, menuX + 2, ry, MENU_W - 4, MENU_ROW);
+            if (hover) UiRender.roundRect(g, menuX + 2, ry, MENU_W - 4, MENU_ROW, 3, Theme.CARD_HOVER);
+            g.drawString(font, UiRender.ellipsize(font, entry.label, MENU_W - 12), menuX + 6, ry + 3, hover ? Theme.TEXT : Theme.TEXT_DIM, false);
+            addHit(menuX + 2, ry, MENU_W - 4, MENU_ROW, (a, b, c) -> {
+                menuMaterial = null;
+                entry.action.run();
+            });
+            ry += MENU_ROW;
+        }
+    }
+
     /** Große Vorschau, solange die Maus über einem Vorschaubild steht. */
     @Override protected void renderOverlay(GuiGraphics g, int mx, int my, float partialTick) {
+        renderMenu(g, mx, my);
         Path file = hoverPreview;
         hoverPreview = null;
         if (file == null) return;
@@ -467,6 +529,13 @@ public final class BlueprintScreen extends ClientScreen {
         y += paragraph(g, "Gesamter Plan, unabhängig vom Ebenenfilter. Offen enthält auch ungeprüfte Positionen. Inventar zählt lose Items, keine Kisteninhalte.", x, y, w, Theme.TEXT_MUTED) + 8;
         if (!feature.isEnabled()) y += paragraph(g, "Abgleich pausiert: Vorschau unter Platzierung einschalten.", x, y, w, Theme.WARNING) + 8;
         if (!plan.inDimension(minecraft.level)) y += paragraph(g, "Andere Dimension: Die Zahlen zeigen den letzten Abgleich.", x, y, w, Theme.WARNING) + 8;
+        if (plan.focus != null) {
+            // Kompakter Hinweis, solange nur ein Material in der Vorschau gezeigt wird.
+            UiRender.panel(g, x, y, w, 18, 4, Theme.ACCENT_SOFT, Theme.ACCENT);
+            g.drawString(font, UiRender.ellipsize(font, "Nur angezeigt: " + plan.focus.name, w - 96), x + 6, y + 5, Theme.TEXT, false);
+            button(g, mx, my, x + w - 84, y + 2, 82, 14, "Alle anzeigen", Style.SECONDARY, () -> feature.focusMaterial(null));
+            y += 22;
+        }
         String needle = query.toLowerCase(Locale.ROOT);
         for (BlueprintPlan.Material material : plan.materials) {
             if (!material.name.toLowerCase(Locale.ROOT).contains(needle)) continue;
@@ -475,7 +544,11 @@ public final class BlueprintScreen extends ClientScreen {
                 var slots = minecraft.player.getInventory();
                 for (int i = 0; i < slots.getContainerSize(); i++) if (slots.getItem(i).is(material.item)) inventory += slots.getItem(i).getCount();
             }
-            UiRender.roundRect(g, x, y, w, 43, 4, Theme.CARD);
+            if (plan.focus == material) UiRender.panel(g, x, y, w, 43, 4, Theme.CARD, Theme.ACCENT);
+            else UiRender.roundRect(g, x, y, w, 43, 4, menuMaterial == material ? Theme.CARD_HOVER : Theme.CARD);
+            final int cardY = y;
+            // Rechts- oder Linksklick öffnet das kleine Menü.
+            addHit(x, y, w, 43, (a, b, button) -> openMenu(material, (int) a, (int) b));
             var icon = material.icon();
             if (!icon.isEmpty()) g.renderItem(icon, x + 5, y + 5);
             else g.drawString(font, "?", x + 9, y + 9, Theme.WARNING, false);
@@ -485,7 +558,7 @@ public final class BlueprintScreen extends ClientScreen {
             String missing = material.item == Items.AIR ? "Sonderblock / Flüssigkeit: manuell planen"
                     : "Noch besorgen: " + Math.max(0, material.remaining() - inventory);
             UiRender.scaledText(g, font, UiRender.ellipsize(font, missing, (int) ((w - 12) / 0.8F)), x + 6, y + 32, Theme.TEXT_MUTED, 0.8F);
-            tooltip(g, mx, my, x, y, w, 43, material.name + " · " + totals + " · " + missing);
+            if (menuMaterial == null) tooltip(g, mx, my, x, cardY, w, 43, material.name + " · " + totals + " · " + missing + " · Rechtsklick: Optionen");
             y += 47;
         }
         y += paragraph(g, "Orientierung und Blockzustände zählen mit. Bedarf ist eine Bauhilfe: Wasser, Redstone-Zustände und Spezialmechaniken können Nacharbeit benötigen.", x, y, w, Theme.TEXT_MUTED) + 6;
@@ -534,6 +607,6 @@ public final class BlueprintScreen extends ClientScreen {
         }
         Notifications.warning("Bauplan", "Bitte eine .litematic-, .schem- oder Struktur-.nbt-Datei hineinziehen.");
     }
-    @Override public boolean mouseScrolled(double mx, double my, double sx, double sy) { scroll.scroll(sy); return true; }
+    @Override public boolean mouseScrolled(double mx, double my, double sx, double sy) { menuMaterial = null; scroll.scroll(sy); return true; }
     @Override public void onClose() { feature.saveState(); ModuleManager.saveNow(); super.onClose(); }
 }
