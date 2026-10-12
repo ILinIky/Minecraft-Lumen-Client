@@ -95,7 +95,7 @@ Baupläne aus älteren Minecraft-Versionen werden automatisch umgewandelt, z. B.
 4. Mit **Bild ↑ / Bild ↓** Ebene für Ebene bauen.
 5. Die Materialliste zeigt Gesamtbedarf, was noch fehlt und was schon im Inventar ist.
    Rechtsklick auf ein Material öffnet ein kleines Menü: *Nur dieses anzeigen* (Vorschau zeigt nur dieses Material,
-   zurück mit *Alle anzeigen*), *In die Hand nehmen* (aus dem Inventar, wie Mittelklick) und *In Kisten suchen* (Kisten-Gedächtnis).
+   zurück mit *Alle anzeigen*), *Ersetzen …* (Ersatzblock für den ganzen Plan), *In die Hand nehmen* (aus dem Inventar, wie Mittelklick) und *In Kisten suchen* (Kisten-Gedächtnis).
 
 **Darstellung**
 - **Vorschaubild** in der Dateiliste und beim geladenen Plan, damit ähnlich benannte Baupläne nicht verwechselt werden.

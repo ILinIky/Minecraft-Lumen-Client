@@ -25,7 +25,8 @@ Sowohl das Modul Sammelliste als auch HUD und dessen Element Sammelliste müssen
 
 Bei offenem Chat (T) öffnet ein **Rechtsklick auf einen Eintrag** ein kleines Menü:
 *Nur diesen anzeigen* (das HUD zeigt nur noch diesen Eintrag; zurück über *Alle anzeigen*
-oder einen Klick auf die Kopfzeile „Alle (N) ✕“), *In die Hand nehmen* (aus dem Inventar,
+oder einen Klick auf die Kopfzeile „Alle (N) ✕“), *Ersetzen …* (nur bei Materialien des
+geladenen Bauplans: Ersatzblock suchen, gilt sofort im ganzen Plan, wie Material ersetzen), *In die Hand nehmen* (aus dem Inventar,
 wie Mittelklick, es wird nichts erzeugt), *In Kisten suchen* (Kisten-Gedächtnis) und bei
 eigenen Zielen *Aus Liste entfernen*. Die Einzelanzeige wird nicht gespeichert.
 

@@ -357,6 +357,7 @@ public final class BlueprintScreen extends ClientScreen {
         boolean focused = plan != null && plan.focus == material;
         entries.add(new MenuEntry(focused ? "Alle anzeigen" : "Nur dieses anzeigen", () -> feature.focusMaterial(material)));
         if (material.item != Items.AIR) {
+            entries.add(new MenuEntry("Ersetzen …", () -> feature.openReplace(this, material.item)));
             entries.add(new MenuEntry("In die Hand nehmen", () -> feature.takeIntoHand(material.item, material)));
             if (ModuleManager.CHEST_MEMORY != null && ModuleManager.CHEST_MEMORY.isEnabled()) {
                 entries.add(new MenuEntry("In Kisten suchen", () -> minecraft.setScreen(new ChestSearchScreen(this, material.name))));
@@ -573,10 +574,7 @@ public final class BlueprintScreen extends ClientScreen {
             if (menuMaterial == null) tooltip(g, mx, my, x, cardY, w, 43, material.name + " · " + totals + " · " + missing + " · Rechtsklick: Optionen");
             y += 47;
             if (material.item != Items.AIR) {
-                button(g, mx, my, x, y, w, 18, "Material ersetzen", Style.SECONDARY, () ->
-                    minecraft.setScreen(new ItemPickerScreen(this, "Ersatzblock wählen", item -> item instanceof net.minecraft.world.item.BlockItem,
-                        item -> feature.replaceDisplayedMaterial(plan, material.item,
-                            net.minecraft.core.registries.BuiltInRegistries.BLOCK.getKey(((net.minecraft.world.item.BlockItem)item).getBlock()).toString()))));
+                button(g, mx, my, x, y, w, 18, "Material ersetzen", Style.SECONDARY, () -> feature.openReplace(this, material.item));
                 y += 24;
             }
         }

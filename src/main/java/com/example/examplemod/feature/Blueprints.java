@@ -495,6 +495,22 @@ public final class Blueprints extends Module {
         }
         applyReplacements(next);
     }
+    /** Ob dieses Item ein Material des geladenen Bauplans ist (dann lässt es sich ersetzen). */
+    public boolean usesMaterial(Item item) {
+        return plan != null && item != Items.AIR && plan.materials.stream().anyMatch(m -> m.item == item);
+    }
+
+    /** Ersatzblock auswählen und im ganzen Bauplan einsetzen; danach zurück zu {@code parent}. */
+    public void openReplace(net.minecraft.client.gui.screens.Screen parent, Item material) {
+        BlueprintPlan expected = plan;
+        if (expected == null) return;
+        mc.setScreen(new com.example.examplemod.gui.ItemPickerScreen(parent,
+                "Ersatz für " + new ItemStack(material).getHoverName().getString(),
+                item -> item instanceof net.minecraft.world.item.BlockItem,
+                item -> replaceDisplayedMaterial(expected, material,
+                        net.minecraft.core.registries.BuiltInRegistries.BLOCK.getKey(((net.minecraft.world.item.BlockItem) item).getBlock()).toString())));
+    }
+
     public void resetMaterials() { if (plan != null && !replacements.isEmpty()) applyReplacements(java.util.Map.of()); }
     private void applyReplacements(java.util.Map<String, String> next) {
         try {

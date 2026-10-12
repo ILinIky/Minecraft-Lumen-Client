@@ -59,6 +59,10 @@ public final class HudRenderer {
             List<HudMenu.Entry> entries = new ArrayList<>();
             boolean solo = feature.solo() == row.item();
             entries.add(new HudMenu.Entry(solo ? "Alle anzeigen" : "Nur diesen anzeigen", () -> feature.solo(solo ? null : row.item())));
+            // Materialien des geladenen Bauplans lassen sich direkt im ganzen Plan ersetzen.
+            if (ModuleManager.BLUEPRINTS.usesMaterial(row.item())) {
+                entries.add(new HudMenu.Entry("Ersetzen …", () -> ModuleManager.BLUEPRINTS.openReplace(null, row.item())));
+            }
             entries.add(new HudMenu.Entry("In die Hand nehmen", () -> ModuleManager.BLUEPRINTS.takeIntoHand(row.item(), null)));
             if (ModuleManager.CHEST_MEMORY != null && ModuleManager.CHEST_MEMORY.isEnabled()) {
                 entries.add(new HudMenu.Entry("In Kisten suchen", () -> mc.setScreen(new ChestSearchScreen(null, row.name()))));
