@@ -602,7 +602,7 @@ public final class Blueprints extends Module {
         for (int i = 0; i < MAIN_INVENTORY; i++) {
             ItemStack stack = inventory.getItem(i);
             if (stack.isEmpty() || !stack.is(item)) continue;
-            if (ItemStack.isSameItemAndComponents(plain, stack)) return i;
+            if (ItemStack.isSameItemSameComponents(plain, stack)) return i;
             if (fallback < 0) fallback = i;
         }
         return fallback;
