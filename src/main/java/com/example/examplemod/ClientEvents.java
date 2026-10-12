@@ -160,6 +160,24 @@ public class ClientEvents {
         return com.example.examplemod.gui.hud.HudRenderer.scrollMaterials(event.getDeltaY(), event.getMouseX(), event.getMouseY());
     }
 
+    /** Sammelliste bei offenem Chat: Rechtsklick-Menü und "Alle anzeigen". */
+    @SubscribeEvent
+    public static boolean onHudListClick(net.minecraftforge.client.event.ScreenEvent.MouseButtonPressed.Pre event) {
+        if (!(event.getScreen() instanceof net.minecraft.client.gui.screens.ChatScreen)) return false;
+        if (com.example.examplemod.gui.hud.HudMenu.click(event.getMouseX(), event.getMouseY())) return true;
+        return com.example.examplemod.gui.hud.HudRenderer.clickMaterials(event.getMouseX(), event.getMouseY(), event.getButton());
+    }
+
+    /** Das HUD-Menü über dem Chat zeichnen; in anderen Fenstern schließen. */
+    @SubscribeEvent
+    public static void onScreenRender(net.minecraftforge.client.event.ScreenEvent.Render.Post event) {
+        if (event.getScreen() instanceof net.minecraft.client.gui.screens.ChatScreen) {
+            com.example.examplemod.gui.hud.HudMenu.render(event.getGuiGraphics(), event.getMouseX(), event.getMouseY());
+        } else {
+            com.example.examplemod.gui.hud.HudMenu.close();
+        }
+    }
+
     /** Modul-Tasten aus dem Client-Menü (nicht zusammen mit F3-Kombinationen). */
     @SubscribeEvent
     public static void onKey(InputEvent.Key event) {

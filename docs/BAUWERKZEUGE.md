@@ -23,6 +23,12 @@ ausgeblendet. Die Zahl der HUD-Zeilen ist einstellbar; weitere Einträge bleiben
 Menü erreichbar. Position über X → Client → HUD → HUD bearbeiten verschieben.
 Sowohl das Modul Sammelliste als auch HUD und dessen Element Sammelliste müssen an sein.
 
+Bei offenem Chat (T) öffnet ein **Rechtsklick auf einen Eintrag** ein kleines Menü:
+*Nur diesen anzeigen* (das HUD zeigt nur noch diesen Eintrag; zurück über *Alle anzeigen*
+oder einen Klick auf die Kopfzeile „Alle (N) ✕“), *In die Hand nehmen* (aus dem Inventar,
+wie Mittelklick, es wird nichts erzeugt), *In Kisten suchen* (Kisten-Gedächtnis) und bei
+eigenen Zielen *Aus Liste entfernen*. Die Einzelanzeige wird nicht gespeichert.
+
 Ungeprüfte Bauplanpositionen zählen zum Bedarf. Bei deaktivierter Bauplanvorschau
 oder in einer anderen Dimension zeigen die Ziele den letzten Abgleich; das
 Sammellisten-Menü kennzeichnet dies. Ohne geladenen Bauplan wartet die Verknüpfung.

@@ -24,6 +24,8 @@ public final class MaterialList extends Module {
     private List<Row> rows = List.of();
     private List<Row> incomplete = List.of();
     private int ticks;
+    /** Nur dieses Item im HUD zeigen (Rechtsklick-Menü), sonst {@code null}. Wird nicht gespeichert. */
+    private Item solo;
 
     public MaterialList() {
         super("material_list", "Sammelliste", "Materialbedarf aus Bauplänen und eigene Sammelziele im HUD", Category.WORLD);
@@ -35,7 +37,14 @@ public final class MaterialList extends Module {
     }
     public Map<String, Integer> manual() { return Collections.unmodifiableMap(manual); }
     public List<Row> rows() { return rows; }
-    public List<Row> hudRows() { return hideDone.get() ? incomplete : rows; }
+    public List<Row> hudRows() {
+        if (solo != null) return rows.stream().filter(r -> r.item() == solo).toList();
+        return hideDone.get() ? incomplete : rows;
+    }
+    public Item solo() { return solo; }
+    /** Nur dieses Item zeigen; {@code null} zeigt wieder alle. */
+    public void solo(Item item) { solo = item; }
+    public boolean isManual(Item item) { return manual.containsKey(BuiltInRegistries.ITEM.getKey(item).toString()); }
     public void pinPlan() {
         followPlan.set(true);
         setEnabled(true, false);
@@ -84,9 +93,11 @@ public final class MaterialList extends Module {
         next.sort(Comparator.comparing((Row r) -> r.missing() == 0).thenComparing(Row::name));
         rows = List.copyOf(next);
         incomplete = rows.stream().filter(r -> r.missing() > 0).toList();
+        // Verschwindet das einzeln gezeigte Item aus der Liste, wieder alle zeigen (sonst wäre das HUD leer).
+        if (solo != null && rows.stream().noneMatch(r -> r.item() == solo)) solo = null;
     }
     @Override public void onTick() { if (++ticks % 5 == 0) refresh(); }
-    @Override public void onLeaveWorld() { rows = incomplete = List.of(); ticks = 0; }
+    @Override public void onLeaveWorld() { rows = incomplete = List.of(); ticks = 0; solo = null; }
     @Override public void saveExtra(JsonObject json) {
         JsonObject values = new JsonObject(); manual.forEach(values::addProperty); json.add("targets", values);
     }

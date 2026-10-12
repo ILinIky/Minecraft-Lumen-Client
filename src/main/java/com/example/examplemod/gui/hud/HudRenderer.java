@@ -8,6 +8,10 @@ import net.minecraft.Util;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.screens.ChatScreen;
+import com.example.examplemod.gui.ChestSearchScreen;
+
+import java.util.ArrayList;
+import java.util.List;
 
 /** Zeichnet das HUD über dem Spielbild (aufgerufen aus GuiMixin) und im HUD-Editor. */
 public final class HudRenderer {
@@ -33,6 +37,39 @@ public final class HudRenderer {
         return false;
     }
 
+    /**
+     * Klick bei offenem Chat auf die Sammelliste: Rechtsklick auf eine Zeile öffnet das Menü,
+     * Klick auf die Kopfzeile zeigt nach "Nur diesen" wieder alle. {@code true} = Klick verbraucht.
+     */
+    public static boolean clickMaterials(double mouseX, double mouseY, int button) {
+        Minecraft mc = Minecraft.getInstance();
+        Hud hud = ModuleManager.HUD;
+        var feature = ModuleManager.MATERIAL_LIST;
+        if (mc.player == null || hud == null || feature == null || !hud.isEnabled() || mc.options.hideGui) return false;
+        for (HudElement element : hud.elements()) {
+            if (!(element instanceof MaterialListElement list) || !element.isVisible()) continue;
+            if (element.h <= 0 || !com.example.examplemod.gui.UiRender.inside(mouseX, mouseY, element.x, element.y, element.w, element.h)) return false;
+            com.example.examplemod.feature.MaterialList.Row row = list.rowAt(mouseX, mouseY);
+            if (row == null) {
+                if (feature.solo() == null) return false;
+                feature.solo(null);
+                return true;
+            }
+            if (button != 1) return false;
+            List<HudMenu.Entry> entries = new ArrayList<>();
+            boolean solo = feature.solo() == row.item();
+            entries.add(new HudMenu.Entry(solo ? "Alle anzeigen" : "Nur diesen anzeigen", () -> feature.solo(solo ? null : row.item())));
+            entries.add(new HudMenu.Entry("In die Hand nehmen", () -> ModuleManager.BLUEPRINTS.takeIntoHand(row.item(), null)));
+            if (ModuleManager.CHEST_MEMORY != null && ModuleManager.CHEST_MEMORY.isEnabled()) {
+                entries.add(new HudMenu.Entry("In Kisten suchen", () -> mc.setScreen(new ChestSearchScreen(null, row.name()))));
+            }
+            if (feature.isManual(row.item())) entries.add(new HudMenu.Entry("Aus Liste entfernen", () -> feature.set(row.item(), 0)));
+            HudMenu.open(entries, mouseX, mouseY);
+            return true;
+        }
+        return false;
+    }
+
     private static void tickFrame() {
         long now = Util.getMillis();
         frameDelta = lastFrame == 0 ? 0 : Math.min(0.1F, (now - lastFrame) / 1000F);
@@ -42,6 +79,8 @@ public final class HudRenderer {
     public static void render(GuiGraphics g) {
         Minecraft mc = Minecraft.getInstance();
         if (mc.screen instanceof HudEditorScreen) return;
+        // Das Rechtsklick-Menü gehört zum offenen Chat.
+        if (!(mc.screen instanceof ChatScreen)) HudMenu.close();
         tickFrame();
         Hud hud = ModuleManager.HUD;
         boolean showHud = mc.player != null && hud != null && hud.isEnabled() && !mc.options.hideGui

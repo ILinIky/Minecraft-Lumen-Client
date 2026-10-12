@@ -23,9 +23,21 @@ public final class MaterialListElement extends HudElement {
         h = rows.isEmpty() ? (editing ? 38 : 0) : 22 + shown * 25 + (rows.size() > shown ? 14 : 0);
     }
     public boolean scroll(double delta) { return viewport.scroll(delta); }
+
+    /** Zeile unter der Maus (Lage vom letzten Bild), sonst {@code null}. */
+    public MaterialList.Row rowAt(double mouseX, double mouseY) {
+        if (!UiRender.inside(mouseX, mouseY, x, y + 22, w, shown * 25)) return null;
+        int index = viewport.offset() + (int) ((mouseY - y - 22) / 25);
+        return index >= 0 && index < rows.size() ? rows.get(index) : null;
+    }
     @Override public void render(GuiGraphics g, Minecraft mc, boolean editing, float dt) {
         UiRender.roundRect(g, x, y, w, h, 4, Theme.HUD_BG);
         g.drawString(mc.font, "Sammelliste", x + 6, y + 6, Theme.ACCENT, false);
+        if (ModuleManager.MATERIAL_LIST.solo() != null) {
+            // Nur ein Eintrag gezeigt: kleiner Hinweis, Klick im Chat zeigt wieder alle.
+            String all = "Alle (" + ModuleManager.MATERIAL_LIST.rows().size() + ") ✕";
+            g.drawString(mc.font, all, x + w - mc.font.width(all) - 6, y + 6, Theme.TEXT_DIM, false);
+        }
         if (rows.isEmpty()) g.drawString(mc.font, "Stein: 128/320", x + 6, y + 20, Theme.TEXT, false);
         for (int i = 0; i < shown; i++) {
             var row = rows.get(viewport.offset() + i); int ry = y + 22 + i * 25;

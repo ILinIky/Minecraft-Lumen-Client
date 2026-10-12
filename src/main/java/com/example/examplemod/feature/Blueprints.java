@@ -749,7 +749,8 @@ public final class Blueprints extends Module {
         int slot = findSlot(inventory, item);
         if (slot < 0) {
             String text = new ItemStack(item).getHoverName().getString() + " nicht im Inventar";
-            Notifications.warning("Bauplan", material == null ? text : text + " · " + material.remaining() + " noch offen");
+            if (material == null) Notifications.warning("Nicht im Inventar", text);
+            else Notifications.warning("Bauplan", text + " · " + material.remaining() + " noch offen");
             return;
         }
         if (slot < HOTBAR) {
