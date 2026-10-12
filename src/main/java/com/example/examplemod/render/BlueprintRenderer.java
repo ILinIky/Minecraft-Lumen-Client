@@ -3,22 +3,18 @@ package com.example.examplemod.render;
 import com.example.examplemod.ExampleMod;
 import com.example.examplemod.blueprint.Blueprint;
 import com.example.examplemod.blueprint.BlueprintPlan;
+import com.example.examplemod.compat.RenderTypes;
 import com.example.examplemod.gui.Theme;
-import com.mojang.blaze3d.pipeline.BlendFunction;
-import com.mojang.blaze3d.pipeline.RenderPipeline;
 import com.mojang.blaze3d.vertex.VertexConsumer;
 import net.minecraft.Util;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.multiplayer.ClientLevel;
 import net.minecraft.client.renderer.BiomeColors;
-import net.minecraft.client.renderer.RenderPipelines;
-import net.minecraft.client.renderer.RenderStateShard;
 import net.minecraft.client.renderer.RenderType;
 import net.minecraft.client.renderer.block.model.BlockModelPart;
 import net.minecraft.client.renderer.texture.OverlayTexture;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
-import net.minecraft.resources.ResourceLocation;
 import net.minecraft.util.RandomSource;
 import net.minecraft.world.level.BlockAndTintGetter;
 import net.minecraft.world.level.ColorResolver;
@@ -43,16 +39,21 @@ import java.util.Set;
 /** Real block-model geometry/textures, depth-tested and alpha blended on the final main target. */
 public final class BlueprintRenderer {
     private static final int MAX_VISIBLE = 4096;
-    /** Blaue "fehlt"-Konturen nur in der Nähe; weiter weg reicht die Geistervorschau. */
-    private static final double NEAR_OUTLINE_SQ = 8 * 8;
-    private static final RenderPipeline PIPELINE = RenderPipeline.builder(RenderPipelines.TERRAIN_SNIPPET)
-            .withLocation(ResourceLocation.fromNamespaceAndPath(ExampleMod.MODID, "pipeline/blueprint"))
-            .withBlend(BlendFunction.TRANSLUCENT).withDepthWrite(false)
-            .withShaderDefine("ALPHA_CUTOUT", 0.01F).build();
-    private static final RenderType GHOST = RenderType.create("examplemod_blueprint", 2 * 1024 * 1024, false, true, PIPELINE,
-            RenderType.CompositeState.builder().setTextureState(RenderStateShard.BLOCK_SHEET_MIPPED)
-                    .setLightmapState(RenderStateShard.LIGHTMAP).setOutputState(RenderStateShard.MAIN_TARGET)
-                    .createCompositeState(false));
+
+    /** Linien an den Blöcken: keine, nur Fehler (rot/gelb/violett) oder alles (zusätzlich blau = fehlt). */
+    public enum Markers { OFF, ERRORS, ALL }
+
+    /**
+     * Darstellung der Vorschau.
+     *
+     * @param opacity      Deckkraft der Blocktexturen (0..1)
+     * @param tint         Stärke der leuchtenden Schicht in Akzentfarbe (0 = aus)
+     * @param throughWalls auch hinter echten Blöcken sichtbar
+     */
+    public record Style(float opacity, float tint, Markers markers, boolean throughWalls) {}
+
+    /** Formen je Blockzustand für die Einfärbung (spart Berechnungen pro Bild). */
+    private final java.util.Map<BlockState, List<AABB>> shapes = new java.util.HashMap<>();
     private record Candidate(int index, BlockPos pos, double distance) {}
     private List<Candidate> candidates = List.of();
     private final Set<BlockState> failedModels = new HashSet<>();
@@ -67,9 +68,10 @@ public final class BlueprintRenderer {
     private final List<BlockModelPart> parts = new ArrayList<>();
 
     public boolean limited() { return limited; }
-    public void clear() { candidates = List.of(); previous = null; refreshed = 0; failedModels.clear(); limited = false; }
+    public void clear() { candidates = List.of(); previous = null; refreshed = 0; failedModels.clear(); shapes.clear(); limited = false; }
 
-    public void render(BlueprintPlan plan, WorldRenderContext context, float opacity, int distance, boolean outlines) {
+    public void render(BlueprintPlan plan, WorldRenderContext context, Style style, int distance) {
+        float opacity = style.opacity();
         Minecraft mc = Minecraft.getInstance();
         ClientLevel level = mc.level;
         if (level == null) return;
@@ -99,10 +101,12 @@ public final class BlueprintRenderer {
         PreviewWorld view = new PreviewWorld(plan, level);
         var poses = context.poseStack();
         var dispatcher = mc.getBlockRenderer();
-        VertexConsumer ghost = new AlphaConsumer(context.buffers().getBuffer(GHOST), opacity);
+        RenderType ghostType = RenderTypes.blueprintGhost(style.throughWalls());
+        VertexConsumer ghost = new AlphaConsumer(context.buffers().getBuffer(ghostType), opacity);
         // Keep only lightweight error boxes; do not interleave line and quad buffers.
         List<Candidate> markers = new ArrayList<>();
         List<Candidate> fills = new ArrayList<>();
+        List<Candidate> tinted = new ArrayList<>();
         for (Candidate candidate : candidates) {
             Blueprint.Cell cell = plan.blueprint.cells().get(candidate.index);
             BlueprintPlan.Status status = plan.compare(level, cell, candidate.pos);
@@ -118,6 +122,7 @@ public final class BlueprintRenderer {
                     random.setSeed(state.getSeed(candidate.pos));
                     dispatcher.getBlockModel(state).collectParts(random, parts);
                     dispatcher.getModelRenderer().tesselateWithoutAO(view, parts, state, candidate.pos, poses, ghost, true, OverlayTexture.NO_OVERLAY);
+                    if (style.tint() > 0) tinted.add(candidate);
                 } catch (RuntimeException failure) {
                     if (failedModels.add(state)) ExampleMod.LOGGER.warn("Bauplan: Blockmodell wird als Kontur dargestellt: {}", state, failure);
                     model = false;
@@ -126,13 +131,19 @@ public final class BlueprintRenderer {
             // Truhen, Betten, Schilder, Köpfe und Flüssigkeiten haben kein normales Blockmodell:
             // halbtransparent in ihrer Kartenfarbe füllen, damit sie trotzdem als Körper erkennbar sind.
             if (!model && state != null && status == BlueprintPlan.Status.MISSING) fills.add(candidate);
-            boolean nearMissing = status != BlueprintPlan.Status.MISSING || candidate.distance <= NEAR_OUTLINE_SQ;
-            if ((!model || (outlines && status != BlueprintPlan.Status.CORRECT)) && nearMissing) markers.add(candidate);
+            boolean error = status == BlueprintPlan.Status.WRONG_BLOCK || status == BlueprintPlan.Status.WRONG_STATE
+                    || status == BlueprintPlan.Status.UNSUPPORTED;
+            boolean mark = switch (style.markers()) {
+                case OFF -> false;
+                case ERRORS -> error;
+                case ALL -> status != BlueprintPlan.Status.CORRECT;
+            };
+            if (mark) markers.add(candidate);
         }
-        context.buffers().endBatch(GHOST);
+        context.buffers().endBatch(ghostType);
 
-        if (!fills.isEmpty()) {
-            RenderType quadsType = RenderType.debugQuads();
+        if (!fills.isEmpty() || !tinted.isEmpty()) {
+            RenderType quadsType = RenderTypes.filledQuads(style.throughWalls());
             VertexConsumer quads = context.buffers().getBuffer(quadsType);
             int alpha = Math.round(Math.min(1F, opacity * 0.8F) * 255);
             for (Candidate fill : fills) {
@@ -143,10 +154,20 @@ public final class BlueprintRenderer {
                             context.ry(fill.pos.getY()), context.rz(fill.pos.getZ())).deflate(0.01), color);
                 }
             }
+            // Einfärbung: leuchtende Schicht in der Akzentfarbe, knapp über der Blockform.
+            int tintColor = (Math.round(Math.min(1F, style.tint()) * 255) << 24) | (Theme.ACCENT & 0xFFFFFF);
+            for (Candidate tint : tinted) {
+                BlockState state = plan.state(plan.blueprint.cells().get(tint.index));
+                List<AABB> shape = shapes.computeIfAbsent(state, s -> boxes(s, view, tint.pos));
+                for (AABB box : shape) {
+                    Render3D.filledBox(poses.last(), quads, box.move(context.rx(tint.pos.getX()),
+                            context.ry(tint.pos.getY()), context.rz(tint.pos.getZ())).inflate(0.004), tintColor);
+                }
+            }
             context.buffers().endBatch(quadsType);
         }
 
-        VertexConsumer lines = Render3D.worldLines(context);
+        VertexConsumer lines = style.throughWalls() ? Render3D.lines(context) : Render3D.worldLines(context);
         for (Candidate marker : markers) {
             Blueprint.Cell cell = plan.blueprint.cells().get(marker.index);
             BlockState state = plan.state(cell);
@@ -164,7 +185,7 @@ public final class BlueprintRenderer {
                 o.getY() + plan.blueprint.sizeY(), o.getZ() + size.depth()), Theme.alpha(Theme.ACCENT, 0.45F));
         // Ursprung als kleiner Würfel in der zweiten Akzentfarbe.
         Render3D.box(context, lines, new AABB(o).deflate(0.3), Theme.ACCENT_2);
-        Render3D.flushWorld(context);
+        if (style.throughWalls()) Render3D.flush(context); else Render3D.flushWorld(context);
     }
 
     private static List<AABB> boxes(BlockState state, BlockAndTintGetter view, BlockPos pos) {

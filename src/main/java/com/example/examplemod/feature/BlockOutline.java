@@ -1,5 +1,6 @@
 package com.example.examplemod.feature;
 
+import com.example.examplemod.compat.RenderTypes;
 import com.example.examplemod.gui.Theme;
 import com.example.examplemod.module.Category;
 import com.example.examplemod.module.Module;
@@ -10,8 +11,6 @@ import com.mojang.blaze3d.vertex.VertexConsumer;
 import net.minecraft.client.Camera;
 import net.minecraft.client.multiplayer.ClientLevel;
 import net.minecraft.client.renderer.MultiBufferSource;
-import net.minecraft.client.renderer.RenderPipelines;
-import net.minecraft.client.renderer.RenderStateShard;
 import net.minecraft.client.renderer.RenderType;
 import net.minecraft.core.BlockPos;
 import net.minecraft.world.level.block.state.BlockState;
@@ -22,10 +21,6 @@ import net.minecraft.world.phys.shapes.CollisionContext;
 import net.minecraft.world.phys.shapes.VoxelShape;
 import net.minecraftforge.client.event.RenderHighlightEvent;
 
-import java.util.HashMap;
-import java.util.Map;
-import java.util.OptionalDouble;
-
 /** Ersetzt die Vanilla-Umrandung des anvisierten Blocks durch eine in Akzentfarbe und wählbarer Dicke. */
 public class BlockOutline extends Module {
     private final Setting.Mode color;
@@ -33,8 +28,6 @@ public class BlockOutline extends Module {
     private final Setting.Slider opacity;
     private final Setting.Bool fill;
     private final Setting.Slider fillOpacity;
-    /** Pro Linienstärke ein eigener RenderType, weil die Breite Teil des Render-Zustands ist. */
-    private final Map<Integer, RenderType> lineTypes = new HashMap<>();
 
     public BlockOutline() {
         super("block_outline", "Blockumrandung", "Farbe und Dicke der Umrandung am anvisierten Block", Category.RENDER);
@@ -64,12 +57,7 @@ public class BlockOutline extends Module {
     private RenderType lineType() {
         // Wie Vanilla mit der Fensterbreite skalieren, damit die Dicke bei jeder Auflösung gleich wirkt.
         float scale = Math.max(1.0F, mc.getWindow().getWidth() / 1920.0F);
-        int key = Math.max(2, Math.round((float) width.get() * scale * 2));
-        return lineTypes.computeIfAbsent(key, k -> {
-            // Genau 1.0 gilt bei Vanilla als "Standardbreite" und würde ignoriert.
-            double px = k == 2 ? 1.01 : k / 2.0;
-            return Shards.outline("examplemod_block_outline_" + k, px);
-        });
+        return RenderTypes.outline(width.get() * scale);
     }
 
     /** Aus dem Forge-Event; {@code true} unterdrückt die Vanilla-Umrandung. */
@@ -91,7 +79,7 @@ public class BlockOutline extends Module {
 
         if (fill.get()) {
             int fillColor = Theme.alpha(base | 0xFF000000, (float) fillOpacity.get() / 100F);
-            RenderType quadsType = RenderType.debugQuads();
+            RenderType quadsType = RenderTypes.filledQuads();
             VertexConsumer quads = buffers.getBuffer(quadsType);
             for (AABB box : shape.toAabbs()) {
                 Render3D.filledBox(pose, quads, box.move(ox, oy, oz).inflate(0.002), fillColor);
@@ -107,19 +95,5 @@ public class BlockOutline extends Module {
                 (float) (x2 + ox), (float) (y2 + oy), (float) (z2 + oz), lineColor));
         if (buffers instanceof MultiBufferSource.BufferSource source) source.endBatch(type);
         return true;
-    }
-
-    /** Unterklasse nur für den Zugriff auf die geschützte {@code LineStateShard}-Klasse. */
-    private static final class Shards extends RenderStateShard {
-        private Shards() { super("examplemod_shards", () -> {}, () -> {}); }
-
-        static RenderType outline(String name, double width) {
-            return RenderType.create(name, 1536, RenderPipelines.LINES,
-                    RenderType.CompositeState.builder()
-                            .setLineState(new LineStateShard(OptionalDouble.of(width)))
-                            .setLayeringState(VIEW_OFFSET_Z_LAYERING)
-                            .setOutputState(ITEM_ENTITY_TARGET)
-                            .createCompositeState(false));
-        }
     }
 }

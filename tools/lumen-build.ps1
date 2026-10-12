@@ -1,7 +1,8 @@
 # Lumen Client - Bauen, testen und installieren.
 # Aufruf ueber Lumen_Bauen_und_Installieren.bat. Mit -NoInstall wird nur gebaut und getestet
-# (keine Installation, Build-Nummer bleibt unveraendert).
-param([switch] $NoInstall)
+# (keine Installation, Build-Nummer bleibt unveraendert). Mit -Mc 1.21.8 wird eine andere
+# Minecraft-Version gebaut (muss unter versions\ eingerichtet sein, siehe tools\new-mc-version.ps1).
+param([switch] $NoInstall, [string] $Mc)
 
 $ErrorActionPreference = 'Stop'
 $ProjectRoot = Split-Path $PSScriptRoot -Parent
@@ -119,8 +120,18 @@ try {
     Write-Banner
     $propertiesFile = Join-Path $ProjectRoot 'gradle.properties'
     $properties = Read-GradleProperties $propertiesFile
-    $minecraftVersion = $properties['minecraft_version']
-    $forgeVersion = $properties['forge_version']
+    $minecraftVersion = if ($Mc) { $Mc.Trim() } else { $properties['mc_version'] }
+    if ($minecraftVersion -notmatch '^\d+(\.\d+){1,3}[A-Za-z0-9.-]*$') { throw "Ungueltige Minecraft-Version: $minecraftVersion" }
+    $versionsDirectory = Join-Path $ProjectRoot 'versions'
+    $available = @(Get-ChildItem -LiteralPath $versionsDirectory -Filter '*.properties' -File |
+        ForEach-Object { $_.BaseName } | Sort-Object)
+    $versionFile = Join-Path $versionsDirectory "$minecraftVersion.properties"
+    if (-not (Test-Path -LiteralPath $versionFile)) {
+        throw ("Minecraft {0} ist nicht eingerichtet. Vorhanden: {1}. Neue Version: tools\new-mc-version.ps1" -f
+            $minecraftVersion, ($available -join ', '))
+    }
+    $versionProperties = Read-GradleProperties $versionFile
+    $forgeVersion = $versionProperties['forge_version']
     $fileName = $properties['mod_file_name']
     $buildText = $properties['mod_build']
     if ($fileName -notmatch '^[A-Za-z0-9_-]{1,64}$') { throw 'mod_file_name in gradle.properties ist ungueltig.' }
@@ -138,7 +149,8 @@ try {
 
     # [2/4] Version ----------------------------------------------------------
     Write-Step 2 'Version festlegen'
-    Write-Ok ("Lumen Client {0}  (Minecraft {1}, Forge {2})" -f $version, $minecraftVersion, $forgeVersion)
+    Write-Ok ("Lumen Client {0}  (Minecraft {1}, Forge {2}, Java {3})" -f $version, $minecraftVersion, $forgeVersion, $versionProperties['java_version'])
+    if ($available.Count -gt 1) { Write-Detail 'Versionen:' (($available -join ', ') + '   (andere mit -Mc <Version>)') }
     if ($NoInstall) { Write-Warn 'Testbuild: keine Installation, die Build-Nummer bleibt gleich.' }
 
     # [3/4] Bauen ------------------------------------------------------------
@@ -149,7 +161,7 @@ try {
     $errorLog = Join-Path $buildDirectory 'lumen-build-errors.log'
     $gradlew = Join-Path $ProjectRoot 'gradlew.bat'
     # cmd /c ""pfad" args": aeussere Anfuehrungszeichen entfernt cmd selbst, der Pfad darf Leerzeichen enthalten.
-    $gradleArguments = '/d /c ""{0}" -p "{1}" build --console=plain -Pmod_build={2}"' -f $gradlew, $ProjectRoot, $build
+    $gradleArguments = '/d /c ""{0}" -p "{1}" build --console=plain -Pmod_build={2} -Pmc_version={3}"' -f $gradlew, $ProjectRoot, $build, $minecraftVersion
     $process = Start-Process -FilePath 'cmd.exe' -ArgumentList $gradleArguments -WorkingDirectory $ProjectRoot `
         -NoNewWindow -PassThru -RedirectStandardOutput $log -RedirectStandardError $errorLog
     $null = $process.Handle   # sonst liefert Windows PowerShell keinen Exit-Code

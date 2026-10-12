@@ -136,6 +136,14 @@ public abstract class Setting {
             changed();
         }
 
+        /** Setzt einen der erlaubten Werte; unbekannte Werte werden ignoriert. */
+        public void set(String mode) {
+            int found = modes.indexOf(mode);
+            if (found < 0 || found == index) return;
+            index = found;
+            changed();
+        }
+
         @Override public JsonElement save() { return new JsonPrimitive(get()); }
 
         @Override public void load(JsonElement element) {

@@ -1,67 +1,34 @@
 package com.example.examplemod.render;
 
-import com.example.examplemod.ExampleMod;
-import com.mojang.blaze3d.pipeline.RenderPipeline;
-import com.mojang.blaze3d.platform.DepthTestFunction;
+import com.example.examplemod.compat.RenderTypes;
 import com.mojang.blaze3d.vertex.PoseStack;
 import com.mojang.blaze3d.vertex.VertexConsumer;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.Font;
 import net.minecraft.client.renderer.LightTexture;
-import net.minecraft.client.renderer.RenderPipelines;
-import net.minecraft.client.renderer.RenderStateShard;
-import net.minecraft.client.renderer.RenderType;
-import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.Vec3;
 import org.joml.Matrix4f;
 
 
-/** Zeichenhilfen für Linien, Boxen und Beschriftungen, die durch Wände sichtbar sind. */
+/** Zeichenhilfen für Linien, Boxen und Beschriftungen. Die Render-Zustände selbst stehen in {@link RenderTypes}. */
 public final class Render3D {
-    private static final RenderPipeline LINES_THROUGH_WALLS = RenderPipeline.builder(RenderPipelines.LINES_SNIPPET)
-            .withLocation(ResourceLocation.fromNamespaceAndPath(ExampleMod.MODID, "pipeline/esp_lines"))
-            .withDepthTestFunction(DepthTestFunction.NO_DEPTH_TEST)
-            .withDepthWrite(false)
-            .build();
-
-    // MAIN_TARGET statt ITEM_ENTITY_TARGET: wir zeichnen nach dem Zusammensetzen der Fabulous-Puffer.
-    public static final RenderType ESP_LINES = RenderType.create("examplemod_esp_lines", 1536, LINES_THROUGH_WALLS,
-            RenderType.CompositeState.builder()
-                    .setLineState(RenderStateShard.DEFAULT_LINE)
-                    .setLayeringState(RenderStateShard.NO_LAYERING)
-                    .setOutputState(RenderStateShard.MAIN_TARGET)
-                    .createCompositeState(false));
-
-    private static final RenderPipeline LINES_DEPTH = RenderPipeline.builder(RenderPipelines.LINES_SNIPPET)
-            .withLocation(ResourceLocation.fromNamespaceAndPath(ExampleMod.MODID, "pipeline/world_lines"))
-            .withDepthWrite(false)
-            .build();
-
-    /** Linien, die von Blöcken verdeckt werden (Lichtlevel, Chunk-Grenzen). */
-    public static final RenderType WORLD_LINES = RenderType.create("examplemod_world_lines", 1536, LINES_DEPTH,
-            RenderType.CompositeState.builder()
-                    .setLineState(RenderStateShard.DEFAULT_LINE)
-                    .setLayeringState(RenderStateShard.VIEW_OFFSET_Z_LAYERING)
-                    .setOutputState(RenderStateShard.MAIN_TARGET)
-                    .createCompositeState(false));
-
     private Render3D() {}
 
     public static VertexConsumer worldLines(WorldRenderContext context) {
-        return context.buffers().getBuffer(WORLD_LINES);
+        return context.buffers().getBuffer(RenderTypes.WORLD_LINES);
     }
 
     public static void flushWorld(WorldRenderContext context) {
-        context.buffers().endBatch(WORLD_LINES);
+        context.buffers().endBatch(RenderTypes.WORLD_LINES);
     }
 
     public static VertexConsumer lines(WorldRenderContext context) {
-        return context.buffers().getBuffer(ESP_LINES);
+        return context.buffers().getBuffer(RenderTypes.ESP_LINES);
     }
 
     public static void flush(WorldRenderContext context) {
-        context.buffers().endBatch(ESP_LINES);
+        context.buffers().endBatch(RenderTypes.ESP_LINES);
     }
 
     /** Zeichnet eine Box; {@code box} ist in Weltkoordinaten. */

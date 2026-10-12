@@ -25,6 +25,8 @@ public class ClientKeybinds {
     public static KeyMapping BLUEPRINTS;
     public static KeyMapping BLUEPRINT_LAYER_UP;
     public static KeyMapping BLUEPRINT_LAYER_DOWN;
+    public static KeyMapping BLUEPRINT_INFO;
+    public static KeyMapping CHEST_SEARCH;
 
     @SubscribeEvent
     public static void onRegisterKeyMappings(RegisterKeyMappingsEvent event) {
@@ -44,6 +46,11 @@ public class ClientKeybinds {
         event.register(BLUEPRINTS);
         event.register(BLUEPRINT_LAYER_UP);
         event.register(BLUEPRINT_LAYER_DOWN);
+        // Linkes Alt: liegt beim Laufen unter dem Daumen und ist in Vanilla frei.
+        BLUEPRINT_INFO = createMapping("blueprint_info", GLFW.GLFW_KEY_LEFT_ALT);
+        event.register(BLUEPRINT_INFO);
+        CHEST_SEARCH = createMapping("chest_search", GLFW.GLFW_KEY_K);
+        event.register(CHEST_SEARCH);
     }
 
     private static KeyMapping createMapping(String name, int key) {

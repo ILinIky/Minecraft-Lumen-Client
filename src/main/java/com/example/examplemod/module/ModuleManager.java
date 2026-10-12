@@ -1,9 +1,11 @@
 package com.example.examplemod.module;
 
+import com.example.examplemod.feature.AutoDrop;
 import com.example.examplemod.feature.AutoSprint;
 import com.example.examplemod.feature.BlockEsp;
 import com.example.examplemod.feature.BlockOutline;
 import com.example.examplemod.feature.Blueprints;
+import com.example.examplemod.feature.ChestMemory;
 import com.example.examplemod.feature.ChunkBorders;
 import com.example.examplemod.feature.Design;
 import com.example.examplemod.feature.EntityEsp;
@@ -43,6 +45,8 @@ public final class ModuleManager {
     public static NoFall NO_FALL;
     public static Freecam FREECAM;
     public static Invisibility INVISIBILITY;
+    public static AutoDrop AUTO_DROP;
+    public static ChestMemory CHEST_MEMORY;
     public static Waypoints WAYPOINTS;
     public static LightLevel LIGHT_LEVEL;
     public static ChunkBorders CHUNK_BORDERS;
@@ -73,8 +77,10 @@ public final class ModuleManager {
         AUTO_SPRINT = register(new AutoSprint());
         FREECAM = register(new Freecam());
         INVISIBILITY = register(new Invisibility());
+        AUTO_DROP = register(new AutoDrop());
         WAYPOINTS = register(new Waypoints());
         BLUEPRINTS = register(new Blueprints());
+        CHEST_MEMORY = register(new ChestMemory());
         // Vor dem HUD, weil dessen Elemente die Minimap brauchen.
         MINIMAP = register(new Minimap());
         HUD = register(new Hud());

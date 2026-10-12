@@ -1,6 +1,10 @@
 package com.example.examplemod;
 
+import com.example.examplemod.blueprint.BlueprintWriter;
 import com.example.examplemod.gui.BlueprintScreen;
+import com.example.examplemod.module.ModuleManager;
+import net.minecraft.core.BlockPos;
+import com.example.examplemod.gui.ChestSearchScreen;
 import com.example.examplemod.gui.Notifications;
 import com.example.examplemod.gui.WaypointScreen;
 import com.example.examplemod.waypoint.TeleportService;
@@ -24,7 +28,8 @@ import net.minecraftforge.fml.common.Mod;
 /**
  * Chat-Befehle für Wegpunkte. Die bisherigen Befehle bleiben erhalten:
  * /tpmanager <id|name>, /tpmanager delete <id>, /tpmanager back, /tpname <name>, /tpadd <x> <y> <z> [name], /wp
- * Dazu /wp ziel <id|name> und /wp ziel aus für das Kompass-Ziel sowie /bauplan.
+ * Dazu /wp ziel <id|name> und /wp ziel aus für das Kompass-Ziel, /bauplan [ecke1|ecke2|speichern <Name>]
+ * und /kiste [Suche].
  */
 @Mod.EventBusSubscriber(modid = ExampleMod.MODID, value = Dist.CLIENT, bus = Mod.EventBusSubscriber.Bus.FORGE)
 public class ClientCommandHandler {
@@ -57,10 +62,21 @@ public class ClientCommandHandler {
                                 .executes(context -> setTarget(StringArgumentType.getString(context, "waypoint"))))));
 
         dispatcher.register(Commands.literal("bauplan").executes(context -> {
-            Minecraft mc = Minecraft.getInstance();
-            mc.schedule(() -> mc.setScreen(new BlueprintScreen(null)));
-            return 1;
-        }));
+                    Minecraft mc = Minecraft.getInstance();
+                    mc.schedule(() -> mc.setScreen(new BlueprintScreen(null)));
+                    return 1;
+                })
+                .then(Commands.literal("ecke1").executes(context -> blueprintCorner(1)))
+                .then(Commands.literal("ecke2").executes(context -> blueprintCorner(2)))
+                .then(Commands.literal("speichern")
+                        .executes(context -> saveBlueprint(""))
+                        .then(Commands.argument("name", StringArgumentType.greedyString())
+                                .executes(context -> saveBlueprint(StringArgumentType.getString(context, "name"))))));
+
+        dispatcher.register(Commands.literal("kiste")
+                .executes(context -> openChestSearch(""))
+                .then(Commands.argument("suche", StringArgumentType.greedyString())
+                        .executes(context -> openChestSearch(StringArgumentType.getString(context, "suche")))));
 
         dispatcher.register(Commands.literal("tpname")
                 .then(Commands.argument("name", StringArgumentType.greedyString())
@@ -73,6 +89,27 @@ public class ClientCommandHandler {
         dispatcher.register(Commands.literal("tpadd")
                 .then(Commands.argument("x", DoubleArgumentType.doubleArg())
                         .then(Commands.argument("y", DoubleArgumentType.doubleArg()).then(z))));
+    }
+
+    /** Ecke der Bauplan-Aufnahme: anvisierter Block, sonst die eigene Position. */
+    private static int blueprintCorner(int which) {
+        Minecraft mc = Minecraft.getInstance();
+        if (mc.player == null || ModuleManager.BLUEPRINTS == null) return 0;
+        BlockPos aimed = ModuleManager.BLUEPRINTS.aimedBlock();
+        ModuleManager.BLUEPRINTS.setCorner(which, aimed != null ? aimed : mc.player.blockPosition());
+        return 1;
+    }
+
+    private static int saveBlueprint(String name) {
+        if (ModuleManager.BLUEPRINTS == null) return 0;
+        ModuleManager.BLUEPRINTS.saveSelection(name, BlueprintWriter.Format.LITEMATIC);
+        return 1;
+    }
+
+    private static int openChestSearch(String query) {
+        Minecraft mc = Minecraft.getInstance();
+        mc.schedule(() -> mc.setScreen(new ChestSearchScreen(null, query)));
+        return 1;
     }
 
     private static int openMenu() {

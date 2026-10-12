@@ -24,6 +24,7 @@ Profile speichern. Akzentfarbe und Stil (Dunkel, Mitternacht, Hell) lassen sich 
 - [Tasten und Befehle](#tasten-und-befehle)
 - [Installation](#installation)
 - [Selbst bauen](#selbst-bauen)
+- [Mehrere Minecraft-Versionen](#mehrere-minecraft-versionen)
 - [Projektaufbau](#projektaufbau)
 - [Hinweise](#hinweise)
 
@@ -49,7 +50,8 @@ Profile speichern. Akzentfarbe und Stil (Dunkel, Mitternacht, Hell) lassen sich 
 | **Wegpunkte** | Orte speichern, in Gruppen sortieren, exportieren, mit Lichtstrahl in der Welt anzeigen |
 | **Navigation** | Kompass zum Ziel, Meldung bei Ankunft, Portal-Punkt bei Zielen in Nether oder Oberwelt |
 | **Todespunkte** | Beim Tod automatisch ein Wegpunkt, der Kompass zeigt dorthin |
-| **Baupläne** | `.litematic`, `.schem` und `.nbt` als durchsichtige Vorschau nachbauen, [mehr dazu](#baupläne) |
+| **Baupläne** | `.litematic`, `.schem` und `.nbt` als durchsichtige Vorschau nachbauen oder eigene speichern, [mehr dazu](#baupläne) |
+| **Kisten-Gedächtnis** | Merkt sich den Inhalt jeder geöffneten Kiste; Suche (**K**) zeigt, wo ein Item liegt, und führt hin |
 
 ### 🏃 Bewegung und Spieler
 | Modul | Beschreibung |
@@ -59,6 +61,7 @@ Profile speichern. Akzentfarbe und Stil (Dunkel, Mitternacht, Hell) lassen sich 
 | **NoFall** | Kein Fallschaden |
 | **Auto-Sprint** | Automatisch sprinten beim Vorwärtslaufen |
 | **Unsichtbar (lokal)** | Eigenen Körper ausblenden, nur für dich |
+| **Auto-Abwurf** | Ausgewählte Items automatisch wegwerfen (wie Strg+Q), auf Wunsch mit Menge zum Behalten (z. B. 64 Bruchstein). Wertvolles und das Item in der Hand bleiben geschützt |
 
 ### ⚙ Client
 | Modul | Beschreibung |
@@ -93,10 +96,23 @@ Baupläne aus älteren Minecraft-Versionen werden automatisch umgewandelt, z. B.
 5. Die Materialliste zeigt Gesamtbedarf, was noch fehlt und was schon im Inventar ist.
 
 **Darstellung**
+- **Vorschaubild** in der Dateiliste und beim geladenen Plan, damit ähnlich benannte Baupläne nicht verwechselt werden.
+  Gespeicherte Litematica-Bilder werden direkt übernommen, sonst zeichnet Lumen eine Ansicht schräg von oben. Maus darüber: große Ansicht.
 - Echte Blocktexturen, halbtransparent. Truhen, Betten, Schilder und Flüssigkeiten erscheinen als farbiger Körper.
-- **Block-Info:** Zielst du auf einen noch nicht gebauten Block, zeigt ein Tooltip Name, Ausrichtung (z. B. „Norden“), Inventar und Restbedarf.
-- Farben: 🔵 fehlt · 🔴 falscher Block · 🟡 falsche Ausrichtung · 🟣 unbekannter Block
+- **Block-Info:** **Alt** halten und auf einen noch nicht gebauten Block zielen: Ein Tooltip zeigt Name, Ausrichtung (z. B. „Norden“), Inventar und Restbedarf.
+  Wählbar: *Taste halten* (Standard), *Taste umschalten*, *Immer* oder *Aus*. Die Taste lässt sich direkt im
+  Bauplan-Fenster (*Platzierung → Block-Info-Taste*) neu belegen, auch mit Maus-Seitentasten. Doppelte Belegungen werden angezeigt.
+- **Markierungen:** *Aus*, *Nur Fehler* (Standard: 🔴 falscher Block · 🟡 falsche Ausrichtung · 🟣 unbekannt) oder *Alles* (zusätzlich 🔵 fehlt).
+- **Sichtbarkeit:** Stufen *Normal*, *Kräftig*, *Maximal* oder einzeln: Deckkraft bis 100 %, Einfärbung in der Akzentfarbe,
+  *Durch Wände* (z. B. für Ebenen unter der Erde) und *Pulsieren*.
 - Der geladene Plan wird **pro Welt gemerkt** und beim nächsten Betreten wiederhergestellt.
+
+**Eigene Baupläne speichern** (Reiter *Aufnehmen*)
+1. Zwei gegenüberliegende Ecken setzen: anvisierter Block oder eigene Position, auch per `/bauplan ecke1` und `/bauplan ecke2`.
+2. Name eingeben, Format wählen: `.litematic` (mit Vorschaubild, auch in Litematica nutzbar) oder `.nbt` (Strukturblock).
+3. Speichern, auch per `/bauplan speichern <Name>`. Die Datei landet in `.minecraft/schematics`, Vorhandenes wird nie überschrieben.
+
+Gespeichert werden Blöcke mit Ausrichtung und Zustand, aber keine Kisteninhalte, Schildtexte oder Tiere.
 
 ## Tasten und Befehle
 
@@ -107,6 +123,8 @@ Baupläne aus älteren Minecraft-Versionen werden automatisch umgewandelt, z. B.
 | **C** (halten) | Zoom |
 | **B** | Baupläne |
 | **Bild ↑ / Bild ↓** | Bauplan-Ebene wechseln |
+| **Alt** (halten, änderbar) | Bauplan: Block-Info zum anvisierten Block |
+| **K** | Kisten-Gedächtnis durchsuchen |
 | **F6** | Wegpunkt-Menü |
 | **F7** | Wegpunkt speichern |
 | **F5** | Zum letzten Wegpunkt teleportieren |
@@ -122,6 +140,8 @@ Feste Tasten lassen sich unter *Optionen → Steuerung → Lumen Client* ändern
 | `/tpmanager <ID\|Name>` | Zu einem Wegpunkt teleportieren |
 | `/tpmanager back` · `/tpmanager delete <ID>` | Zurück zur letzten Position, Wegpunkt löschen |
 | `/bauplan` | Bauplan-Fenster öffnen |
+| `/bauplan ecke1` · `ecke2` · `speichern <Name>` | Bereich auswählen und als eigenen Bauplan speichern |
+| `/kiste [Suche]` | Kisten-Gedächtnis durchsuchen, z. B. `/kiste diamant` |
 
 ## Installation
 
@@ -148,7 +168,8 @@ Jede Version liegt zusätzlich unter `releases\`.
 |---|---|
 | `Lumen_Bauen_und_Installieren.bat` | Bauen, testen, installieren, Versionsnummer erhöhen |
 | `Lumen_Bauen_und_Installieren.bat -NoInstall` | Nur bauen und testen |
-| `gradlew build` | Klassischer Gradle-Build ohne Installation |
+| `Lumen_Bauen_und_Installieren.bat -Mc 1.21.8` | Eine andere eingerichtete Minecraft-Version bauen |
+| `gradlew build` · `gradlew build -Pmc_version=1.21.8` | Klassischer Gradle-Build ohne Installation |
 
 **Versionsschema:** `<Minecraft-Version>_v<Nummer>`, z. B. `1.21.7_v3`. Je höher die Nummer, desto neuer.
 Die Nummer steht als `mod_build` in `gradle.properties` und wird nach jeder erfolgreichen Installation automatisch erhöht.
@@ -160,23 +181,48 @@ Die Nummer steht als `mod_build` in `gradle.properties` und wird nach jeder erfo
 | `blueprintReaderTest` | Bauplan-Formate, Varint- und Bit-Dekodierung, Drehen und Spiegeln |
 | `teleportAttemptTest` | Teleport-Ablauf: bestätigt, abgelehnt, Timeout, Rücksetzungen |
 | `waypointGroupsTest` | Wegpunkt-Gruppen, Speichern, Laden und Export |
+| `dropGuardTest` | Auto-Abwurf: Schutz vor Endlosschleifen beim Wiederaufheben |
+| `chestSearchTest` | Kisten-Gedächtnis: Suche, Zusammenfassen, Shulker-Inhalte |
+
+## Mehrere Minecraft-Versionen
+
+Lumen ist für weitere Minecraft-Versionen vorbereitet. Gemeinsamer Code liegt in `src/main/`.
+Was sich je Version unterscheidet, steht in `versions/<Version>.properties` und `src/mc/<Version>/`.
+Eine neue Version wird **neben** den bestehenden angelegt:
+
+```bat
+powershell -ExecutionPolicy Bypass -File tools
+ew-mc-version.ps1 -To 1.21.8 -Forge 58.0.0
+Lumen_Bauen_und_Installieren.bat -Mc 1.21.8 -NoInstall
+```
+
+Die ausführliche Anleitung mit Checkliste steht in [docs/NEUE_MINECRAFT_VERSION.md](docs/NEUE_MINECRAFT_VERSION.md).
 
 ## Projektaufbau
 
 ```
 mc_2026/
 ├─ Lumen_Bauen_und_Installieren.bat   Bauen und installieren mit einem Doppelklick
-├─ tools/lumen-build.ps1              Das eigentliche Bau-Skript
-├─ build.gradle · gradle.properties   Build-Konfiguration, Version, Abhängigkeiten
-└─ src/main/java/com/example/examplemod/
-   ├─ module/      Modul-System, Einstellungen, Profile, Konfiguration
-   ├─ feature/     Alle Module (X-Ray, Minimap, Baupläne, …)
-   ├─ gui/         Menüs, Theme, Tooltips
-   │  └─ hud/      HUD-Elemente und HUD-Editor
-   ├─ render/      3D-Zeichenhilfen, Minimap-Karte, Bauplan-Vorschau
-   ├─ waypoint/    Wegpunkte, Navigation, Teleport
-   ├─ blueprint/   Bauplan-Formate, Platzierung, Abgleich mit der Welt
-   └─ mixin/       Eingriffe in Minecraft (Rendering, HUD, Kamera)
+├─ tools/
+│  ├─ lumen-build.ps1                 Das eigentliche Bau-Skript
+│  └─ new-mc-version.ps1              Neue Minecraft-Version anlegen
+├─ versions/1.21.7.properties         Forge-, Mapping- und Java-Version je Minecraft-Version
+├─ build.gradle · gradle.properties   Build-Konfiguration, Standard-Version, Build-Nummer
+├─ docs/                              Anleitungen für Entwickler
+└─ src/
+   ├─ main/java/com/example/examplemod/     Gemeinsamer Code
+   │  ├─ module/      Modul-System, Einstellungen, Profile, Konfiguration
+   │  ├─ feature/     Alle Module (X-Ray, Minimap, Baupläne, …)
+   │  ├─ gui/         Menüs, Theme, Tooltips
+   │  │  └─ hud/      HUD-Elemente und HUD-Editor
+   │  ├─ render/      3D-Zeichenhilfen, Minimap-Karte, Bauplan-Vorschau
+   │  ├─ waypoint/    Wegpunkte, Navigation, Teleport
+   │  ├─ chest/       Kisten-Gedächtnis: Speicher und Suche
+   │  └─ blueprint/   Bauplan-Formate, Platzierung, Abgleich mit der Welt
+   └─ mc/1.21.7/                            Versionsabhängiger Code
+      ├─ mixin/       Eingriffe in Minecraft (Rendering, HUD, Kamera)
+      ├─ compat/      Eigene Render-Zustände
+      └─ ClientKeybinds, examplemod.mixins.json
 ```
 
 **Gespeicherte Daten** (im Ordner `.minecraft`)
@@ -186,6 +232,7 @@ mc_2026/
 | `config/examplemod/client.json` | Module, Einstellungen, Tasten, Profile |
 | `config/examplemod/teleports/` | Wegpunkte pro Welt bzw. Server |
 | `config/examplemod/blueprints/` | Zuletzt genutzter Bauplan pro Welt |
+| `config/examplemod/chests/` | Kisten-Gedächtnis pro Welt bzw. Server |
 | `schematics/` | Bauplan-Dateien |
 
 Die technische Mod-ID bleibt `examplemod`, damit bestehende Einstellungen und Wegpunkte erhalten bleiben.

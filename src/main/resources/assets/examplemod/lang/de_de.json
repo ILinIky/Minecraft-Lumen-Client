@@ -8,5 +8,7 @@
   "key.examplemod.blueprints": "Baupläne öffnen",
   "key.examplemod.blueprint_layer_up": "Bauplan: Ebene höher",
   "key.examplemod.blueprint_layer_down": "Bauplan: Ebene tiefer",
+  "key.examplemod.blueprint_info": "Bauplan: Block-Info zeigen",
+  "key.examplemod.chest_search": "Kisten durchsuchen",
   "itemGroup.examplemod": "Lumen"
 }

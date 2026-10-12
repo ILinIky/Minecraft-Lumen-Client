@@ -4,7 +4,9 @@ import com.example.examplemod.feature.Freecam;
 import com.example.examplemod.feature.Fullbright;
 import com.example.examplemod.feature.Hud;
 import com.example.examplemod.feature.NoFall;
+import com.example.examplemod.chest.ChestStore;
 import com.example.examplemod.gui.BlueprintScreen;
+import com.example.examplemod.gui.ChestSearchScreen;
 import com.example.examplemod.gui.ClickGuiScreen;
 import com.example.examplemod.gui.Notifications;
 import com.example.examplemod.gui.WaypointEditScreen;
@@ -31,6 +33,7 @@ import net.minecraftforge.client.event.ViewportEvent;
 import net.minecraftforge.event.TickEvent;
 import net.minecraftforge.event.entity.living.LivingFallEvent;
 import net.minecraftforge.event.entity.player.ItemTooltipEvent;
+import net.minecraftforge.event.entity.player.PlayerInteractEvent;
 import net.minecraftforge.eventbus.api.listener.SubscribeEvent;
 import net.minecraftforge.fml.common.Mod;
 import org.lwjgl.glfw.GLFW;
@@ -66,12 +69,19 @@ public class ClientEvents {
         while (ClientKeybinds.BLUEPRINT_LAYER_DOWN.consumeClick()) {
             if (mc.player != null) ModuleManager.BLUEPRINTS.stepLayer(-1);
         }
+        while (ClientKeybinds.CHEST_SEARCH.consumeClick()) {
+            if (mc.screen == null && mc.player != null) mc.setScreen(new ChestSearchScreen(null, ""));
+        }
+        while (ClientKeybinds.BLUEPRINT_INFO.consumeClick()) {
+            if (mc.player != null && mc.screen == null) ModuleManager.BLUEPRINTS.onInfoKey();
+        }
 
         if (mc.player != null && mc.level != null) {
             ModuleManager.onTick();
             Fullbright.update();
             checkDeath(mc);
             Navigation.onClientTick(mc);
+            ChestStore.tick();
         } else {
             wasDead = false;
         }
@@ -89,6 +99,14 @@ public class ClientEvents {
             Notifications.warning("Todespunkt gespeichert", death.displayName() + " · Kompass zeigt dorthin");
         }
         wasDead = dead;
+    }
+
+    /** Kisten-Gedächtnis: merken, welcher Behälter gleich geöffnet wird. */
+    @SubscribeEvent
+    public static void onRightClickBlock(PlayerInteractEvent.RightClickBlock event) {
+        if (event.getLevel().isClientSide() && ModuleManager.CHEST_MEMORY != null && ModuleManager.CHEST_MEMORY.isEnabled()) {
+            ModuleManager.CHEST_MEMORY.onInteract(event.getPos());
+        }
     }
 
     /** Blockumrandung in Akzentfarbe statt der Vanilla-Linie. */
@@ -166,6 +184,7 @@ public class ClientEvents {
     public static void onLogin(ClientPlayerNetworkEvent.LoggingIn event) {
         TeleportService.reset();
         WaypointStore.onJoin();
+        ChestStore.onJoin();
         if (ModuleManager.BLUEPRINTS != null) ModuleManager.BLUEPRINTS.restore();
     }
 
@@ -173,6 +192,7 @@ public class ClientEvents {
     public static void onLogout(ClientPlayerNetworkEvent.LoggingOut event) {
         TeleportService.reset();
         ModuleManager.onLeaveWorld();
+        ChestStore.onLeave();
         WaypointStore.onLeave();
     }
 }

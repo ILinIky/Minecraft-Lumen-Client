@@ -3,9 +3,12 @@ package com.example.examplemod.blueprint;
 import java.util.List;
 import java.util.Map;
 
-/** Immutable file data, independent of a running world or its block registry. */
+/**
+ * Immutable file data, independent of a running world or its block registry.
+ * {@code previewImage}: quadratisches ARGB-Bild aus der Datei (Litematica), sonst {@code null}.
+ */
 public record Blueprint(String name, String source, int sizeX, int sizeY, int sizeZ,
-                        List<State> palette, List<Cell> cells, List<String> warnings) {
+                        List<State> palette, List<Cell> cells, List<String> warnings, int[] previewImage) {
     public Blueprint {
         palette = List.copyOf(palette);
         cells = List.copyOf(cells);

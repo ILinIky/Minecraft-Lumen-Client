@@ -72,8 +72,15 @@ public final class BlueprintReader {
     private static void readLitematic(CompoundTag root, Builder builder) throws IOException {
         int version = integer(root, "Version");
         if (version < 4 || version > 7) throw new IOException("Litematic-Version " + version + " wird nicht unterstützt (4–7).");
-        builder.name = root.getCompoundOrEmpty("Metadata").getStringOr("Name", builder.name);
+        CompoundTag metadata = root.getCompoundOrEmpty("Metadata");
+        builder.name = metadata.getStringOr("Name", builder.name);
         builder.dataVersion = root.getIntOr("MinecraftDataVersion", 0);
+        // Litematica speichert optional ein quadratisches Vorschaubild (ARGB, meist 140×140).
+        int[] preview = metadata.getIntArray("PreviewImageData").orElse(null);
+        if (preview != null) {
+            int side = (int) Math.round(Math.sqrt(preview.length));
+            if (side >= 8 && side <= 512 && side * side == preview.length) builder.preview = preview;
+        }
         CompoundTag regions = compound(root, "Regions");
         if (regions.size() > 1024) throw new IOException("Zu viele Teilbereiche (maximal 1024).");
         long volume = 0;
@@ -261,6 +268,7 @@ public final class BlueprintReader {
         private int maxX = Integer.MIN_VALUE, maxY = Integer.MIN_VALUE, maxZ = Integer.MIN_VALUE;
         private boolean entities, blockEntities, variants;
         private int dataVersion, upgraded;
+        private int[] preview;
 
         private Builder(String source) { this.source = source; name = source; }
         private void bounds(int x, int y, int z, int nx, int ny, int nz) throws IOException {
@@ -321,8 +329,18 @@ public final class BlueprintReader {
             if (blockEntities) warnings.add("Inhalte und Texte von Block-Entities werden nicht übernommen.");
             if (variants) warnings.add("Struktur hat mehrere Varianten; die erste wird angezeigt.");
             if (upgraded > 0) warnings.add(upgraded + " Blockzustände aus einer älteren Minecraft-Version wurden umgewandelt.");
-            return new Blueprint(name.replaceAll("[\\p{Cntrl}§]", " "), source, maxX - minX, maxY - minY, maxZ - minZ,
-                    palette, result, warnings);
+            return new Blueprint(displayName(), source, maxX - minX, maxY - minY, maxZ - minZ,
+                    palette, result, warnings, preview);
+        }
+
+        /** Litematica nennt ungespeicherte Namen "Unnamed"; dann ist der Dateiname aussagekräftiger. */
+        private String displayName() {
+            String clean = name == null ? "" : name.replaceAll("[\\p{Cntrl}§]", " ").trim();
+            if (clean.isEmpty() || clean.equals(source) || clean.equalsIgnoreCase("unnamed") || clean.equalsIgnoreCase("untitled")) {
+                int dot = source.lastIndexOf('.');
+                clean = dot > 0 ? source.substring(0, dot) : source;
+            }
+            return clean;
         }
     }
 }

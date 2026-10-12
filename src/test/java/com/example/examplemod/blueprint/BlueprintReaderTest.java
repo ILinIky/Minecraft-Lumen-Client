@@ -24,6 +24,8 @@ public final class BlueprintReaderTest {
         stateStrings();
         rejected();
         transforms();
+        previewAndNames();
+        writerRoundTrip();
         System.out.println("BlueprintReaderTest: " + assertions + " assertions passed");
     }
 
@@ -170,6 +172,67 @@ public final class BlueprintReaderTest {
         check(quarter.width() == 3 && quarter.depth() == 5, "90° tauscht Breite und Tiefe");
         // Minecraft dreht im Uhrzeigersinn: Osten (+X) wird zu Süden (+Z).
         check(quarter.apply(4, 0).equals(new BlueprintTransform.XZ(2, 4)), "Drehrichtung entspricht Rotation.CLOCKWISE_90");
+    }
+
+    private static void previewAndNames() throws IOException {
+        // Vorschaubild aus den Litematica-Metadaten, "Unnamed" wird durch den Dateinamen ersetzt.
+        CompoundTag root = litematicRoot(0, 0, 0, 1, 1, 1, new int[]{1}, state("minecraft:air"), state("minecraft:stone"));
+        CompoundTag metadata = root.getCompound("Metadata").get();
+        metadata.putString("Name", "Unnamed");
+        metadata.putIntArray("PreviewImageData", new int[8 * 8]);
+        Blueprint named = BlueprintReader.parse(root, "Mein Haus.litematic");
+        check(named.name().equals("Mein Haus"), "\"Unnamed\" wird zum Dateinamen ohne Endung");
+        check(named.previewImage() != null && named.previewImage().length == 64, "Vorschaubild aus der Datei wird übernommen");
+        metadata.putIntArray("PreviewImageData", new int[10]);
+        check(BlueprintReader.parse(root, "x.litematic").previewImage() == null, "Nicht quadratisches Vorschaubild wird ignoriert");
+
+        // Ein roter Würfel: Oberseite voll, Seiten dunkler, Ecken des Bildes leer.
+        int[] colors = {0xFFFF0000};
+        Blueprint cube = new Blueprint("w", "w.nbt", 1, 1, 1, List.of(new Blueprint.State("minecraft:x", Map.of())),
+                List.of(new Blueprint.Cell(0, 0, 0, 0)), List.of(), null);
+        int[] image = BlueprintPreview.render(cube, colors, 64);
+        java.util.Set<Integer> used = new java.util.HashSet<>();
+        for (int pixel : image) used.add(pixel);
+        check(used.contains(0xFFFF0000) && used.contains(0xFFCC0000) && used.contains(0xFF9E0000),
+                "Isometrische Ansicht zeigt drei unterschiedlich helle Flächen");
+        check(image[0] == 0 && image[63] == 0 && image[64 * 63] == 0, "Bildecken bleiben durchsichtig");
+
+        // Zwei übereinander: die verdeckte Oberseite des unteren Blocks wird nicht gezeichnet, nichts ragt aus dem Bild.
+        Blueprint tower = new Blueprint("t", "t.nbt", 1, 2, 1, List.of(new Blueprint.State("minecraft:x", Map.of())),
+                List.of(new Blueprint.Cell(0, 0, 0, 0), new Blueprint.Cell(0, 1, 0, 0)), List.of(), null);
+        check(BlueprintPreview.render(tower, colors, 64).length == 64 * 64, "Turm wird ohne Fehler gezeichnet");
+        // Großer, dünn besetzter Rahmen: Punktdarstellung ohne Verdeckungstabelle.
+        Blueprint sparse = new Blueprint("s", "s.nbt", 4000, 300, 4000, List.of(new Blueprint.State("minecraft:x", Map.of())),
+                List.of(new Blueprint.Cell(0, 0, 0, 0), new Blueprint.Cell(3999, 299, 3999, 0)), List.of(), null);
+        int drawn = 0;
+        for (int pixel : BlueprintPreview.render(sparse, colors, 64)) if (pixel != 0) drawn++;
+        check(drawn >= 1, "Riesige Baupläne werden als Punkte gezeichnet");
+    }
+
+    private static void writerRoundTrip() throws IOException {
+        // 5 Sorten (3 Bits je Eintrag) in einem 7×3×5-Bereich, damit Werte über Long-Grenzen reichen.
+        List<Blueprint.State> palette = List.of(
+                new Blueprint.State("minecraft:stone", Map.of()),
+                new Blueprint.State("minecraft:oak_stairs", Map.of("facing", "east", "half", "top")),
+                new Blueprint.State("minecraft:glass", Map.of()),
+                new Blueprint.State("minecraft:oak_log", Map.of("axis", "z")),
+                new Blueprint.State("minecraft:torch", Map.of()));
+        List<Blueprint.Cell> cells = new java.util.ArrayList<>();
+        for (int y = 0; y < 3; y++) for (int z = 0; z < 5; z++) for (int x = 0; x < 7; x++) {
+            if ((x + y + z) % 3 != 0) cells.add(new Blueprint.Cell(x, y, z, (x * 7 + z * 3 + y) % palette.size()));
+        }
+        int[] preview = new int[16 * 16];
+        preview[5] = 0xFF123456;
+        Blueprint original = new Blueprint("Mein Turm", "Mein Turm", 7, 3, 5, palette, cells, List.of(), preview);
+
+        for (BlueprintWriter.Format format : BlueprintWriter.Format.values()) {
+            Blueprint read = BlueprintReader.parse(BlueprintWriter.toNbt(original, format, "Tester", 0), "Mein Turm" + format.extension);
+            check(read.sizeX() == 7 && read.sizeY() == 3 && read.sizeZ() == 5, format + ": Größe bleibt gleich");
+            check(cells(read).equals(cells(original)), format + ": Alle Blöcke und Zustände bleiben gleich");
+        }
+        Blueprint litematic = BlueprintReader.parse(BlueprintWriter.toLitematic(original, "Tester", 0), "x.litematic");
+        check(litematic.name().equals("Mein Turm"), "Name steht in den Litematica-Metadaten");
+        check(litematic.previewImage() != null && litematic.previewImage()[5] == 0xFF123456, "Vorschaubild wird mitgespeichert");
     }
 
     // ---- Hilfen ----

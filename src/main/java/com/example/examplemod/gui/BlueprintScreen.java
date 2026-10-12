@@ -1,10 +1,14 @@
 package com.example.examplemod.gui;
 
+import com.example.examplemod.ClientKeybinds;
 import com.example.examplemod.blueprint.BlueprintPlan;
 import com.example.examplemod.blueprint.BlueprintReader;
+import com.example.examplemod.blueprint.BlueprintWriter;
+import com.example.examplemod.compat.KeyBindings;
 import com.example.examplemod.feature.Blueprints;
 import com.example.examplemod.module.ModuleManager;
 import net.minecraft.Util;
+import net.minecraft.client.KeyMapping;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.components.EditBox;
 import net.minecraft.client.gui.screens.Screen;
@@ -14,6 +18,8 @@ import net.minecraft.world.item.Items;
 import net.minecraft.world.phys.BlockHitResult;
 import net.minecraft.world.phys.HitResult;
 
+import org.lwjgl.glfw.GLFW;
+
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -22,17 +28,27 @@ import java.util.Locale;
 
 /** Three focused tabs reuse Lumen's cards, theme, clipping and scrolling at every GUI scale. */
 public final class BlueprintScreen extends ClientScreen {
-    private enum Tab { FILES("Dateien"), PLACEMENT("Platzierung"), MATERIALS("Material");
+    private enum Tab { FILES("Dateien"), PLACEMENT("Platzierung"), MATERIALS("Material"), CAPTURE("Aufnehmen");
         final String label;
         Tab(String label) { this.label = label; }
     }
     private final Blueprints feature = ModuleManager.BLUEPRINTS;
     private final Scroll scroll = new Scroll();
+    private static final int FILE_ROW = 36;
+    private int clipTop, clipBottom;
+    /** Vorschaubild unter der Maus, wird nach dem Inhalt groß eingeblendet. */
+    private Path hoverPreview;
+    /** Wartet auf die neue Taste für die Block-Info. */
+    private boolean bindingInfoKey;
     private List<Path> files = List.of();
     private Tab tab;
     private BlueprintPlan seenPlan;
     private EditBox search;
     private String query = "", fileError;
+    /** Reiter "Aufnehmen": Name und Format des neuen Bauplans (bleiben beim Wechseln erhalten). */
+    private EditBox nameField;
+    private static String captureName = "";
+    private static BlueprintWriter.Format captureFormat = BlueprintWriter.Format.LITEMATIC;
 
     public BlueprintScreen(Screen parent) {
         super(Component.literal("Baupläne"), parent);
@@ -49,35 +65,48 @@ public final class BlueprintScreen extends ClientScreen {
         search = borderlessField(winX + winW - fieldW - 18, winY + 11, fieldW, "Suchen …", 80);
         search.setValue(query);
         search.setResponder(value -> { query = value; scroll.reset(); });
-        search.setVisible(tab != Tab.PLACEMENT);
+        search.setVisible(searchTab());
         addRenderableWidget(search);
+        nameField = borderlessField(winX + winW - fieldW - 18, winY + 11, fieldW, "Name des Bauplans …", 64);
+        nameField.setValue(captureName);
+        nameField.setResponder(value -> captureName = value);
+        nameField.setVisible(tab == Tab.CAPTURE);
+        addRenderableWidget(nameField);
     }
+
+    private boolean searchTab() { return tab == Tab.FILES || tab == Tab.MATERIALS; }
 
     private void select(Tab value) {
         tab = value;
         scroll.reset();
         query = "";
-        if (search != null) { search.setValue(""); search.setVisible(tab != Tab.PLACEMENT); setFocused(null); }
+        if (search != null) { search.setValue(""); search.setVisible(searchTab()); setFocused(null); }
+        if (nameField != null) nameField.setVisible(tab == Tab.CAPTURE);
+        if (value == Tab.FILES) refresh();
     }
 
     @Override protected void renderContent(GuiGraphics g, int mx, int my, float partialTick) {
         BlueprintPlan plan = feature.plan();
         if (plan != seenPlan) { seenPlan = plan; select(plan == null ? Tab.FILES : Tab.PLACEMENT); }
         drawTitle(g, "Baupläne", null);
-        if (tab != Tab.PLACEMENT) fieldBackground(g, search, 6, 4);
+        if (searchTab()) fieldBackground(g, search, 6, 4);
+        else if (tab == Tab.CAPTURE) fieldBackground(g, nameField, 6, 4);
         else {
             String label = plan == null ? "Kein Plan" : plan.blueprint.name();
             int left = winX + 24 + font.width("Baupläne");
             g.drawString(font, UiRender.ellipsize(font, label, winX + winW - 14 - left), left, winY + 11, Theme.TEXT_MUTED, false);
         }
-        int tabW = (winW - 32) / 3;
+        int tabW = (winW - 36) / 4;
         for (Tab value : Tab.values()) button(g, mx, my, winX + 12 + value.ordinal() * (tabW + 4), winY + 38,
                 tabW, 20, value.label, tab == value ? Style.PRIMARY : Style.SECONDARY, () -> select(value));
 
         int x = winX + 12, top = winY + 66, w = winW - 32, h = Math.max(0, winH - 102);
+        clipTop = top;
+        clipBottom = top + h;
         int y = top - scroll.update(frameDelta), start = y;
         pushClip(g, x, top, w, h);
         if (tab == Tab.FILES) y = renderFiles(g, mx, my, x, y, w);
+        else if (tab == Tab.CAPTURE) y = renderCapture(g, mx, my, x, y, w);
         else if (plan == null) y += paragraph(g, "Zuerst unter Dateien einen Bauplan laden.", x, y, w, Theme.TEXT_DIM);
         else if (tab == Tab.PLACEMENT) y = renderPlacement(g, mx, my, x, y, w, plan);
         else y = renderMaterials(g, mx, my, x, y, w, plan);
@@ -107,21 +136,249 @@ public final class BlueprintScreen extends ClientScreen {
             String name = file.getFileName().toString();
             if (!name.toLowerCase(Locale.ROOT).contains(needle)) continue;
             shown++;
-            button(g, mx, my, x, y, w, 26, name, Style.SECONDARY, () -> feature.load(file));
-            tooltip(g, mx, my, x, y, w, 26, name + " · Klicken zum Laden");
-            y += 30;
+            // Nur sichtbare Zeilen zeichnen; so werden auch nur dafür Vorschaubilder berechnet.
+            if (y + FILE_ROW >= clipTop && y <= clipBottom) fileRow(g, mx, my, x, y, w, file, name);
+            y += FILE_ROW + 4;
         }
         if (shown == 0) y += paragraph(g, files.isEmpty() ? "Noch keine Baupläne im schematics-Ordner." : "Keine Treffer.", x, y, w, Theme.TEXT_MUTED) + 8;
         if (!feature.loading()) y += paragraph(g, feature.message(), x, y, w, Theme.TEXT_MUTED) + 8;
         return y;
     }
 
+    /**
+     * Taste für die Block-Info direkt hier belegen: Knopf klicken, dann Taste (oder Maus-Seitentaste) drücken.
+     * Esc bricht ab, Entf/Rücktaste stellt den Standard (linkes Alt) wieder her. Doppelte Belegungen werden angezeigt.
+     */
+    private int renderInfoKey(GuiGraphics g, int mx, int my, int x, int y, int w) {
+        KeyMapping key = ClientKeybinds.BLUEPRINT_INFO;
+        if (key == null) return y;
+        UiRender.roundRect(g, x, y, w, 24, 4, Theme.CARD);
+        g.drawString(font, "Block-Info-Taste", x + 8, y + 8, Theme.TEXT_DIM, false);
+        String label = bindingInfoKey ? "Taste drücken …" : KeyBindings.keyName(key);
+        int chipW = Math.max(90, font.width(label) + 16);
+        int chipX = x + w - chipW - 30;
+        boolean hover = hovered(mx, my, chipX, y + 3, chipW, 18);
+        int border = bindingInfoKey ? Theme.accentWave(0) : hover ? Theme.SWITCH_OFF_HOVER : Theme.FIELD_BORDER;
+        UiRender.panel(g, chipX, y + 3, chipW, 18, 4, bindingInfoKey ? Theme.ACCENT_SOFT : Theme.FIELD, border);
+        g.drawString(font, label, chipX + (chipW - font.width(label)) / 2, y + 8, bindingInfoKey ? Theme.TEXT : Theme.TEXT, false);
+        addHit(chipX, y + 3, chipW, 18, (a, b, c) -> {
+            bindingInfoKey = !bindingInfoKey;
+            setFocused(null);
+        });
+        tooltip(g, mx, my, chipX, y + 3, chipW, 18, bindingInfoKey
+                ? "Gewünschte Taste drücken · Esc: abbrechen · Entf: Standard (linkes Alt)"
+                : "Klicken und neue Taste drücken (auch Maus-Seitentasten)");
+        // Auf Standard zurücksetzen
+        boolean resetHover = hovered(mx, my, x + w - 24, y + 3, 18, 18);
+        g.drawString(font, "↺", x + w - 19, y + 8, KeyBindings.isDefault(key) ? Theme.TEXT_MUTED
+                : resetHover ? Theme.ACCENT_2 : Theme.TEXT_DIM, false);
+        addHit(x + w - 24, y + 3, 18, 18, (a, b, c) -> {
+            KeyBindings.reset(key);
+            bindingInfoKey = false;
+            announceInfoKey(key);
+        });
+        if (resetHover) g.setTooltipForNextFrame(font, Component.literal("Standard: linkes Alt"), mx, my);
+        y += 28;
+        List<String> conflicts = KeyBindings.conflicts(key);
+        if (!conflicts.isEmpty()) {
+            y += paragraph(g, "⚠ Diese Taste ist auch belegt für: " + String.join(", ", conflicts)
+                    + ". Beides passiert dann gleichzeitig – besser eine freie Taste wählen.", x, y, w, Theme.WARNING) + 2;
+        }
+        return y;
+    }
+
+    private void announceInfoKey(KeyMapping key) {
+        List<String> conflicts = KeyBindings.conflicts(key);
+        if (conflicts.isEmpty()) Notifications.success("Block-Info-Taste", KeyBindings.keyName(key));
+        else Notifications.warning("Block-Info-Taste: " + KeyBindings.keyName(key), "Auch belegt für " + String.join(", ", conflicts));
+    }
+
+    @Override
+    public boolean keyPressed(int keyCode, int scanCode, int modifiers) {
+        if (bindingInfoKey && ClientKeybinds.BLUEPRINT_INFO != null) {
+            bindingInfoKey = false;
+            if (keyCode == GLFW.GLFW_KEY_ESCAPE) return true;
+            if (keyCode == GLFW.GLFW_KEY_DELETE || keyCode == GLFW.GLFW_KEY_BACKSPACE) KeyBindings.reset(ClientKeybinds.BLUEPRINT_INFO);
+            else KeyBindings.bindKeyboard(ClientKeybinds.BLUEPRINT_INFO, keyCode, scanCode);
+            announceInfoKey(ClientKeybinds.BLUEPRINT_INFO);
+            return true;
+        }
+        return super.keyPressed(keyCode, scanCode, modifiers);
+    }
+
+    @Override
+    public boolean mouseClicked(double mouseX, double mouseY, int button) {
+        // Maus-Seitentasten und Mausrad-Klick lassen sich belegen; Links-/Rechtsklick bricht ab.
+        if (bindingInfoKey && button >= GLFW.GLFW_MOUSE_BUTTON_MIDDLE && ClientKeybinds.BLUEPRINT_INFO != null) {
+            bindingInfoKey = false;
+            KeyBindings.bindMouse(ClientKeybinds.BLUEPRINT_INFO, button);
+            announceInfoKey(ClientKeybinds.BLUEPRINT_INFO);
+            return true;
+        }
+        boolean wasBinding = bindingInfoKey;
+        boolean handled = super.mouseClicked(mouseX, mouseY, button);
+        // Klick daneben beendet das Warten auf eine Taste.
+        if (wasBinding && bindingInfoKey && !handled) bindingInfoKey = false;
+        return handled;
+    }
+
+    /** Reiter "Aufnehmen": zwei Ecken setzen, Format wählen, als eigenen Bauplan speichern. */
+    private int renderCapture(GuiGraphics g, int mx, int my, int x, int y, int w) {
+        y += paragraph(g, "Einen Bereich der Welt als eigenen Bauplan speichern – z. B. in der Kreativwelt bauen "
+                + "und später im Survival nachbauen. Den Namen oben rechts eingeben.", x, y, w, Theme.TEXT_DIM) + 6;
+        for (int which = 1; which <= 2; which++) {
+            final int corner = which;
+            BlockPos pos = feature.corner(corner);
+            UiRender.roundRect(g, x, y, w, 24, 4, Theme.CARD);
+            g.drawString(font, "Ecke " + corner, x + 8, y + 8, corner == 1 ? Theme.ACCENT : Theme.ACCENT_2, false);
+            String text = pos == null ? "nicht gesetzt" : pos.getX() + " / " + pos.getY() + " / " + pos.getZ();
+            int bw = Math.min(92, (w - 130) / 2);
+            g.drawString(font, UiRender.ellipsize(font, text, w - 2 * bw - 70), x + 52, y + 8, pos == null ? Theme.TEXT_MUTED : Theme.TEXT, false);
+            button(g, mx, my, x + w - 2 * bw - 8, y + 3, bw, 18, "Anvisiert", Style.SECONDARY, () -> {
+                BlockPos aimed = feature.aimedBlock();
+                if (aimed == null) Notifications.info("Bauplan-Aufnahme", "Zuerst im Spiel einen Block anvisieren");
+                else feature.setCorner(corner, aimed);
+            });
+            button(g, mx, my, x + w - bw - 4, y + 3, bw, 18, "Meine Position", Style.SECONDARY, () -> {
+                if (minecraft.player != null) feature.setCorner(corner, minecraft.player.blockPosition());
+            });
+            y += 28;
+        }
+        if (feature.hasSelection()) {
+            y += paragraph(g, "Größe: " + feature.selectionSize(), x, y, w, feature.selectionTooLarge() ? Theme.DANGER : Theme.TEXT) + 2;
+            if (feature.selectionTooLarge()) y += paragraph(g, "Zu groß: höchstens 2 Millionen Positionen. Bitte in Teile aufteilen.", x, y, w, Theme.DANGER) + 2;
+        }
+        y += 4;
+        int half = (w - 4) / 2;
+        button(g, mx, my, x, y, half, 20, ".litematic (Litematica)",
+                captureFormat == BlueprintWriter.Format.LITEMATIC ? Style.PRIMARY : Style.SECONDARY,
+                () -> captureFormat = BlueprintWriter.Format.LITEMATIC);
+        button(g, mx, my, x + half + 4, y, w - half - 4, 20, ".nbt (Strukturblock)",
+                captureFormat == BlueprintWriter.Format.STRUCTURE ? Style.PRIMARY : Style.SECONDARY,
+                () -> captureFormat = BlueprintWriter.Format.STRUCTURE);
+        y += 26;
+        boolean ready = feature.hasSelection() && !feature.selectionTooLarge() && !feature.saving();
+        button(g, mx, my, x, y, w - 112, 22, feature.saving() ? "Speichere …" : "Als Bauplan speichern",
+                ready ? Style.PRIMARY : Style.SECONDARY, () -> {
+                    if (ready) feature.saveSelection(captureName, captureFormat);
+                    else if (!feature.hasSelection()) Notifications.info("Bauplan-Aufnahme", "Zuerst beide Ecken setzen");
+                });
+        button(g, mx, my, x + w - 108, y, 108, 22, "Auswahl löschen", Style.SECONDARY, feature::clearSelection);
+        y += 30;
+        y += paragraph(g, "Im Spiel geht es auch per Chat: /bauplan ecke1, /bauplan ecke2, /bauplan speichern <Name>. "
+                + "Ecken werden in der Welt farbig angezeigt.", x, y, w, Theme.TEXT_MUTED) + 4;
+        y += paragraph(g, "Gespeichert wird in .minecraft/schematics. Kisteninhalte, Schildtexte und Tiere werden nicht "
+                + "übernommen. Bereits vorhandene Dateien werden nie überschrieben.", x, y, w, Theme.TEXT_MUTED) + 4;
+        return y;
+    }
+
+    /** Sichtbarkeit: drei Stufen zum Anklicken und die einzelnen Schalter darunter. */
+    private int renderVisibility(GuiGraphics g, int mx, int my, int x, int y, int w) {
+        String current = feature.visibility();
+        g.drawString(font, "Sichtbarkeit", x, y + 6, Theme.TEXT_DIM, false);
+        int labelW = font.width("Sichtbarkeit") + 10;
+        int presetW = (w - labelW - 8) / 3;
+        for (int i = 0; i < Blueprints.VISIBILITY.length; i++) {
+            String preset = Blueprints.VISIBILITY[i];
+            button(g, mx, my, x + labelW + i * (presetW + 4), y, presetW, 20, preset,
+                    preset.equals(current) ? Style.PRIMARY : Style.SECONDARY, () -> feature.applyVisibility(preset));
+        }
+        tooltip(g, mx, my, x + labelW, y, w - labelW, 20, current.equals("Eigene")
+                ? "Eigene Einstellung – eine Stufe anklicken, um zurückzusetzen"
+                : "Normal: 50 % · Kräftig: 75 % + leichte Einfärbung · Maximal: 95 % + starke Einfärbung, durch Wände, pulsierend");
+        y += 24;
+        int third = (w - 8) / 3;
+        button(g, mx, my, x, y, third, 20, "Einfärbung: " + feature.tint.get(),
+                feature.tint.is("Aus") ? Style.SECONDARY : Style.PRIMARY, () -> feature.tint.cycle(hasShiftDown() ? -1 : 1));
+        button(g, mx, my, x + third + 4, y, third, 20, "Durch Wände: " + (feature.throughWalls.get() ? "An" : "Aus"),
+                feature.throughWalls.get() ? Style.PRIMARY : Style.SECONDARY, feature.throughWalls::toggle);
+        button(g, mx, my, x + 2 * (third + 4), y, w - 2 * (third + 4), 20, "Pulsieren: " + (feature.pulse.get() ? "An" : "Aus"),
+                feature.pulse.get() ? Style.PRIMARY : Style.SECONDARY, feature.pulse::toggle);
+        tooltip(g, mx, my, x + third + 4, y, third, 20, feature.throughWalls.getDescription());
+        return y + 24;
+    }
+
+    private static int nextOpacity(int current, boolean backwards) {
+        int[] steps = {30, 50, 70, 85, 100};
+        if (backwards) {
+            for (int i = steps.length - 1; i >= 0; i--) if (steps[i] < current) return steps[i];
+            return steps[steps.length - 1];
+        }
+        for (int step : steps) if (step > current) return step;
+        return steps[0];
+    }
+
+    /** Eine Datei mit Vorschaubild, Namen aus der Datei und Dateinamen darunter. */
+    private void fileRow(GuiGraphics g, int mx, int my, int x, int y, int w, Path file, String fileName) {
+        boolean hover = hovered(mx, my, x, y, w, FILE_ROW);
+        boolean loaded = feature.file() != null
+                && feature.file().toAbsolutePath().normalize().equals(file.toAbsolutePath().normalize());
+        UiRender.panel(g, x, y, w, FILE_ROW, 4, hover ? Theme.CARD_HOVER : Theme.CARD,
+                loaded ? Theme.ACCENT : hover ? Theme.SWITCH_OFF_HOVER : Theme.FIELD_BORDER);
+        int thumb = FILE_ROW - 6;
+        BlueprintPreviews.draw(g, file, x + 3, y + 3, thumb);
+        if (hovered(mx, my, x + 3, y + 3, thumb, thumb)) hoverPreview = file;
+
+        BlueprintPreviews.Entry preview = BlueprintPreviews.get(file);
+        int tx = x + thumb + 10, tw = w - thumb - 16;
+        String chip = loaded ? "Geladen" : null;
+        int chipW = chip == null ? 0 : font.width(chip) + 10;
+        String title = preview.done() && !preview.failed() && preview.name() != null ? preview.name() : withoutExtension(fileName);
+        g.drawString(font, UiRender.ellipsize(font, title, tw - chipW - 4), tx, y + 8, Theme.TEXT, false);
+        if (chip != null) {
+            UiRender.roundRect(g, x + w - chipW - 6, y + 6, chipW, 11, 5, Theme.ACCENT);
+            g.drawString(font, chip, x + w - chipW - 1, y + 8, Theme.ON_ACCENT, false);
+        }
+        String details = !preview.done() ? "Vorschau wird erstellt …" : preview.details();
+        g.drawString(font, UiRender.ellipsize(font, fileName + "  ·  " + details, tw), tx, y + 21,
+                preview.failed() ? Theme.DANGER : Theme.TEXT_MUTED, false);
+        addHit(x, y, w, FILE_ROW, (a, b, c) -> feature.load(file));
+        tooltip(g, mx, my, x + thumb + 6, y, w - thumb - 6, FILE_ROW, fileName + " · Klicken zum Laden");
+    }
+
+    private static String withoutExtension(String name) {
+        int dot = name.lastIndexOf('.');
+        return dot > 0 ? name.substring(0, dot) : name;
+    }
+
+    /** Große Vorschau, solange die Maus über einem Vorschaubild steht. */
+    @Override protected void renderOverlay(GuiGraphics g, int mx, int my, float partialTick) {
+        Path file = hoverPreview;
+        hoverPreview = null;
+        if (file == null) return;
+        int size = Math.min(144, Math.min(width, height) - 24);
+        int px = mx + 14, py = my - size / 2;
+        if (px + size + 6 > width) px = mx - size - 14;
+        py = Math.max(6, Math.min(height - size - 6, py));
+        g.nextStratum();
+        UiRender.shadow(g, px - 4, py - 4, size + 8, size + 8, 6);
+        UiRender.panel(g, px - 4, py - 4, size + 8, size + 8, 6, Theme.WINDOW, Theme.WINDOW_BORDER);
+        BlueprintPreviews.draw(g, file, px, py, size);
+    }
+
     private int renderPlacement(GuiGraphics g, int mx, int my, int x, int y, int w, BlueprintPlan plan) {
         var data = plan.blueprint;
-        y += paragraph(g, data.name(), x, y, w, Theme.TEXT) + 3;
         var transform = plan.transform();
-        y += paragraph(g, transform.width() + " × " + data.sizeY() + " × " + transform.depth() + " Blöcke · "
-                + data.cells().size() + " Positionen", x, y, w, Theme.TEXT_MUTED) + 7;
+        // Karte mit Vorschaubild, damit ähnlich benannte Baupläne nicht verwechselt werden.
+        int image = Math.max(56, Math.min(96, w / 4));
+        UiRender.panel(g, x, y, w, image + 8, 5, Theme.CARD, Theme.FIELD_BORDER);
+        BlueprintPreviews.draw(g, feature.file(), x + 4, y + 4, image);
+        if (feature.file() != null && hovered(mx, my, x + 4, y + 4, image, image)) hoverPreview = feature.file();
+        int tx = x + image + 14, tw = w - image - 22, ty = y + 8;
+        g.drawString(font, UiRender.ellipsize(font, data.name(), tw), tx, ty, Theme.TEXT, false);
+        ty += 13;
+        g.drawString(font, UiRender.ellipsize(font, data.source(), tw), tx, ty, Theme.TEXT_MUTED, false);
+        ty += 13;
+        g.drawString(font, UiRender.ellipsize(font, transform.width() + " × " + data.sizeY() + " × " + transform.depth()
+                + " Blöcke · " + data.cells().size() + " Positionen", tw), tx, ty, Theme.TEXT_DIM, false);
+        ty += 13;
+        if (feature.file() != null) {
+            BlueprintPreviews.Entry preview = BlueprintPreviews.get(feature.file());
+            String source = !preview.done() ? "Vorschau wird erstellt …"
+                    : preview.fromFile() ? "Bild aus der Datei" : "Berechnete Ansicht (schräg von oben)";
+            UiRender.scaledText(g, font, UiRender.ellipsize(font, source, (int) (tw / 0.85F)), tx, ty + 1, Theme.TEXT_MUTED, 0.85F);
+        }
+        y += image + 16;
         int half = (w - 4) / 2;
         button(g, mx, my, x, y, half, 20, feature.isEnabled() ? "Vorschau: An" : "Vorschau: Aus",
                 feature.isEnabled() ? Style.PRIMARY : Style.SECONDARY, feature::toggle);
@@ -175,15 +432,23 @@ public final class BlueprintScreen extends ClientScreen {
         button(g, mx, my, x, y, half, 20, plan.onlyMissing ? "Nur offene Blöcke" : "Gesamter Bauplan", Style.SECONDARY,
                 () -> plan.onlyMissing = !plan.onlyMissing);
         button(g, mx, my, x + half + 4, y, w - half - 4, 20, "Deckkraft: " + feature.opacity.getInt() + "%", Style.SECONDARY,
-                () -> feature.opacity.setProgress(feature.opacity.getInt() >= 85 ? 0 : feature.opacity.getProgress() + 1.0 / 7));
+                () -> feature.opacity.set(nextOpacity(feature.opacity.getInt(), hasShiftDown())));
         y += 24;
-        button(g, mx, my, x, y, half, 20, "Block-Info: " + (feature.blockInfo.get() ? "An" : "Aus"),
-                feature.blockInfo.get() ? Style.PRIMARY : Style.SECONDARY, feature.blockInfo::toggle);
-        tooltip(g, mx, my, x, y, half, 20, feature.blockInfo.getDescription());
-        button(g, mx, my, x + half + 4, y, w - half - 4, 20, "Fehler markieren: " + (feature.outlines.get() ? "An" : "Aus"),
-                feature.outlines.get() ? Style.PRIMARY : Style.SECONDARY, feature.outlines::toggle);
-        y += 28;
-        y += paragraph(g, "Blau: fehlt · Rot: falscher Block · Gelb: Zustand/Ausrichtung · Violett: unbekannt", x, y, w, Theme.TEXT_DIM) + 6;
+        y = renderVisibility(g, mx, my, x, y, w);
+        boolean infoOn = !feature.blockInfo.is(Blueprints.INFO_OFF);
+        button(g, mx, my, x, y, half, 20, UiRender.ellipsize(font, "Block-Info: " + feature.infoLabel(), half - 8),
+                infoOn ? Style.PRIMARY : Style.SECONDARY, () -> feature.blockInfo.cycle(hasShiftDown() ? -1 : 1));
+        tooltip(g, mx, my, x, y, half, 20, "Block-Info: " + feature.infoLabel()
+                + " · Klicken zum Wechseln (Taste halten → Taste umschalten → Immer → Aus)");
+        boolean marking = !feature.markers.is(Blueprints.MARKERS_OFF);
+        button(g, mx, my, x + half + 4, y, w - half - 4, 20, "Markierungen: " + feature.markers.get(),
+                marking ? Style.PRIMARY : Style.SECONDARY, () -> feature.markers.cycle(hasShiftDown() ? -1 : 1));
+        tooltip(g, mx, my, x + half + 4, y, w - half - 4, 20,
+                "Aus → Nur Fehler (rot/gelb/violett) → Alles (zusätzlich blau = fehlt) · Shift: rückwärts");
+        y += 24;
+        y = renderInfoKey(g, mx, my, x, y, w) + 6;
+        y += paragraph(g, "Markierungen: Rot = falscher Block · Gelb = Zustand/Ausrichtung · Violett = unbekannt"
+                + " · Blau = fehlt (nur bei „Alles“)", x, y, w, Theme.TEXT_DIM) + 6;
         y += paragraph(g, "Blockmodelle mit echten Texturen. Truhen, Betten, Schilder, Köpfe und Flüssigkeiten erscheinen als farbiger Körper. Luftbereiche werden nicht geprüft.", x, y, w, Theme.TEXT_MUTED) + 6;
         if (feature.renderer().limited()) y += paragraph(g, "Vorschau auf die nächsten 4096 Blöcke begrenzt. Für Details eine einzelne Ebene wählen.", x, y, w, Theme.WARNING) + 6;
         for (String warning : plan.warnings) y += paragraph(g, warning, x, y, w, Theme.WARNING) + 4;
@@ -249,6 +514,7 @@ public final class BlueprintScreen extends ClientScreen {
         if (hovered(mx, my, x, y, w, h)) g.setTooltipForNextFrame(font, Component.literal(text), mx, my);
     }
     private void refresh() {
+        BlueprintPreviews.invalidateChanged();
         try {
             Files.createDirectories(feature.directory());
             try (var stream = Files.list(feature.directory())) {

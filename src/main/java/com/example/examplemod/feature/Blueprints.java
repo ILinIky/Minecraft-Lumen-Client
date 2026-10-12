@@ -1,9 +1,13 @@
 package com.example.examplemod.feature;
 
+import com.example.examplemod.ClientKeybinds;
 import com.example.examplemod.ExampleMod;
 import com.example.examplemod.blueprint.Blueprint;
 import com.example.examplemod.blueprint.BlueprintPlan;
+import com.example.examplemod.blueprint.BlueprintCapture;
 import com.example.examplemod.blueprint.BlueprintReader;
+import com.example.examplemod.blueprint.BlueprintWriter;
+import com.example.examplemod.gui.BlueprintPreviews;
 import com.example.examplemod.gui.BlueprintScreen;
 import com.example.examplemod.gui.Notifications;
 import com.example.examplemod.module.Category;
@@ -18,6 +22,7 @@ import com.google.gson.JsonParser;
 import com.example.examplemod.gui.Theme;
 import com.example.examplemod.render.Render3D;
 import com.mojang.blaze3d.vertex.VertexConsumer;
+import net.minecraft.SharedConstants;
 import net.minecraft.core.BlockPos;
 import net.minecraft.util.Mth;
 import net.minecraft.world.level.ClipContext;
@@ -48,8 +53,13 @@ public final class Blueprints extends Module {
     });
     private final BlueprintRenderer renderer = new BlueprintRenderer();
     public final Setting.Slider opacity, range;
-    public final Setting.Bool outlines;
-    public final Setting.Bool blockInfo;
+    /** Linien an Blöcken: Aus, Nur Fehler (rot/gelb/violett) oder Alles (zusätzlich blau = fehlt). */
+    public final Setting.Mode markers;
+    public final Setting.Mode tint;
+    public final Setting.Bool throughWalls, pulse;
+    public static final String MARKERS_OFF = "Aus", MARKERS_ERRORS = "Nur Fehler", MARKERS_ALL = "Alles";
+    public static final String[] VISIBILITY = {"Normal", "Kräftig", "Maximal"};
+    public final Setting.Mode blockInfo;
     private BlueprintPlan plan;
     private Path file;
     private Future<?> pending;
@@ -66,15 +76,24 @@ public final class Blueprints extends Module {
     public Blueprints() {
         super("blueprints", "Baupläne", "Transparente Blockvorschau, Ebenen und Materialbedarf", Category.WORLD);
         notPersistent();
-        opacity = add(new Setting.Slider("Deckkraft", "Durchsichtige Vorschau mit echten Blocktexturen", 50, 15, 85, 5, "%"));
+        opacity = add(new Setting.Slider("Deckkraft", "Durchsichtige Vorschau mit echten Blocktexturen", 50, 15, 100, 5, "%"));
         range = add(new Setting.Slider("Sichtweite", "Vorschau nur in geladenen Chunks innerhalb dieser Entfernung", 48, 16, 96, 8, "Bl."));
-        outlines = add(new Setting.Bool("Fehler markieren", "Blau: fehlt (nahe) · Rot: falscher Block · Gelb: Zustand · Violett: unbekannt", true));
-        blockInfo = add(new Setting.Bool("Block-Info", "Beim Anvisieren eines noch nicht gebauten Blocks Name, Ausrichtung und Inventar anzeigen", true));
+        markers = add(new Setting.Mode("Markierungen",
+                "Nur Fehler: rot = falscher Block, gelb = Ausrichtung, violett = unbekannt · Alles: zusätzlich blau = fehlt",
+                MARKERS_ERRORS, MARKERS_OFF, MARKERS_ERRORS, MARKERS_ALL));
+        tint = add(new Setting.Mode("Einfärbung", "Leuchtende Schicht in der Akzentfarbe über der Vorschau", "Aus", "Aus", "Leicht", "Stark"));
+        throughWalls = add(new Setting.Bool("Durch Wände", "Vorschau auch hinter Erde und Blöcken zeigen, z.B. für Ebenen unter der Oberfläche", false));
+        pulse = add(new Setting.Bool("Pulsieren", "Vorschau sanft auf- und abblenden, damit sie auffällt", false));
+        blockInfo = add(new Setting.Mode("Block-Info",
+                "Name, Ausrichtung und Inventar des anvisierten, noch nicht gebauten Blocks. Taste im Bauplan-Fenster (Platzierung) frei wählbar, Standard: linkes Alt",
+                INFO_HOLD, INFO_HOLD, INFO_TOGGLE, INFO_ALWAYS, INFO_OFF).onChange(() -> infoToggled = false));
         add(new Setting.Action("Baupläne öffnen", "Datei laden, platzieren und Materialliste ansehen", () -> mc.setScreen(new BlueprintScreen(mc.screen))));
     }
 
     public Path directory() { return mc.gameDirectory.toPath().resolve("schematics"); }
     public BlueprintPlan plan() { return plan; }
+    /** Datei des geladenen Plans, sonst {@code null}. */
+    public Path file() { return file; }
     public boolean loading() { return loading; }
     public String message() { return message; }
     public BlueprintRenderer renderer() { return renderer; }
@@ -93,6 +112,7 @@ public final class Blueprints extends Module {
         pending = loader.submit(() -> {
             try {
                 Blueprint data = BlueprintReader.read(path);
+                BlueprintPreviews.prepare(path, data);
                 mc.execute(() -> {
                     if (request != generation) return;
                     loading = false;
@@ -145,7 +165,8 @@ public final class Blueprints extends Module {
         file = null;
         savedSignature = null;
         renderer.clear();
-        setEnabled(false, false);
+        // Eine laufende Bereichsauswahl bleibt sichtbar, auch ohne geladenen Plan.
+        setEnabled(corner1 != null || corner2 != null, false);
     }
 
     /**
@@ -169,6 +190,172 @@ public final class Blueprints extends Module {
         } catch (IOException | RuntimeException failure) {
             ExampleMod.LOGGER.warn("Bauplan konnte nicht in den Ordner kopiert werden: {}", source, failure);
             return source;
+        }
+    }
+
+    // ---- Sichtbarkeit der Vorschau ----
+
+    private BlueprintRenderer.Style renderStyle() {
+        float alpha = (float) opacity.get() / 100F;
+        if (pulse.get()) alpha *= 0.6F + 0.4F * (float) (0.5 + 0.5 * Math.sin(System.currentTimeMillis() / 350.0));
+        float tintStrength = tint.is("Stark") ? 0.38F : tint.is("Leicht") ? 0.18F : 0F;
+        BlueprintRenderer.Markers lines = markers.is(MARKERS_OFF) ? BlueprintRenderer.Markers.OFF
+                : markers.is(MARKERS_ALL) ? BlueprintRenderer.Markers.ALL : BlueprintRenderer.Markers.ERRORS;
+        return new BlueprintRenderer.Style(alpha, tintStrength, lines, throughWalls.get());
+    }
+
+    /** Stufen für das Bauplan-Fenster; die Markierungen bleiben dabei, wie der Spieler sie gewählt hat. */
+    public void applyVisibility(String preset) {
+        switch (preset) {
+            case "Kräftig" -> visibility(75, "Leicht", false, false);
+            case "Maximal" -> visibility(95, "Stark", true, true);
+            default -> visibility(50, "Aus", false, false);
+        }
+    }
+
+    private void visibility(int alpha, String tintMode, boolean walls, boolean pulsing) {
+        opacity.set(alpha);
+        tint.set(tintMode);
+        throughWalls.set(walls);
+        pulse.set(pulsing);
+    }
+
+    /** Aktuelle Stufe, oder "Eigene", wenn einzelne Werte angepasst wurden. */
+    public String visibility() {
+        int alpha = opacity.getInt();
+        if (alpha == 50 && tint.is("Aus") && !throughWalls.get() && !pulse.get()) return "Normal";
+        if (alpha == 75 && tint.is("Leicht") && !throughWalls.get() && !pulse.get()) return "Kräftig";
+        if (alpha == 95 && tint.is("Stark") && throughWalls.get() && pulse.get()) return "Maximal";
+        return "Eigene";
+    }
+
+    // ---- Aufnehmen: eigenen Bauplan aus der Welt speichern ----
+
+    private BlockPos corner1, corner2;
+    private String selectionDimension;
+    private boolean saving;
+
+    public BlockPos corner(int which) { return which == 1 ? corner1 : corner2; }
+    public boolean hasSelection() { return corner1 != null && corner2 != null; }
+    public boolean saving() { return saving; }
+
+    /** Anvisierter Block oder {@code null}. */
+    public BlockPos aimedBlock() {
+        if (mc.hitResult instanceof BlockHitResult hit && hit.getType() == HitResult.Type.BLOCK) return hit.getBlockPos();
+        return null;
+    }
+
+    public void setCorner(int which, BlockPos pos) {
+        if (mc.level == null || pos == null) return;
+        String dimension = mc.level.dimension().location().toString();
+        if (selectionDimension != null && !selectionDimension.equals(dimension)) corner1 = corner2 = null;
+        selectionDimension = dimension;
+        if (which == 1) corner1 = pos.immutable(); else corner2 = pos.immutable();
+        if (!isEnabled()) setEnabled(true, false);
+        String text = "Ecke " + which + ": " + pos.getX() + " / " + pos.getY() + " / " + pos.getZ();
+        Notifications.info("Bauplan-Aufnahme", hasSelection() ? text + " · " + selectionSize() : text);
+    }
+
+    /** z.B. "12 × 8 × 15 (1.440 Positionen)". */
+    public String selectionSize() {
+        if (!hasSelection()) return "";
+        int sx = Math.abs(corner1.getX() - corner2.getX()) + 1;
+        int sy = Math.abs(corner1.getY() - corner2.getY()) + 1;
+        int sz = Math.abs(corner1.getZ() - corner2.getZ()) + 1;
+        return String.format(java.util.Locale.GERMANY, "%d × %d × %d (%,d Positionen)", sx, sy, sz, BlueprintCapture.volume(corner1, corner2));
+    }
+
+    public boolean selectionTooLarge() { return hasSelection() && BlueprintCapture.volume(corner1, corner2) > BlueprintCapture.MAX_VOLUME; }
+
+    public void clearSelection() {
+        corner1 = corner2 = null;
+        selectionDimension = null;
+        if (plan == null && !loading) setEnabled(false, false);
+    }
+
+    /**
+     * Liest den Bereich (Haupt-Thread, braucht die Welt) und schreibt die Datei im Hintergrund.
+     * Vorhandene Dateien werden nie überschrieben.
+     */
+    public void saveSelection(String rawName, BlueprintWriter.Format format) {
+        if (!hasSelection() || mc.level == null || mc.player == null) {
+            Notifications.warning("Bauplan-Aufnahme", "Zuerst beide Ecken setzen");
+            return;
+        }
+        if (!mc.level.dimension().location().toString().equals(selectionDimension)) {
+            Notifications.warning("Bauplan-Aufnahme", "Die Auswahl liegt in einer anderen Dimension");
+            return;
+        }
+        if (saving) return;
+        String name = cleanName(rawName);
+        Blueprint captured;
+        try {
+            captured = BlueprintCapture.capture(mc.level, corner1, corner2, name);
+        } catch (IOException failure) {
+            message = failure.getMessage();
+            Notifications.error("Bauplan-Aufnahme", message);
+            return;
+        }
+        String author = mc.player.getName().getString();
+        int dataVersion = SharedConstants.getCurrentVersion().dataVersion().version();
+        Path target = uniqueFile(name, format);
+        saving = true;
+        message = "Speichere " + target.getFileName() + " …";
+        loader.submit(() -> {
+            try {
+                // Litematica-Dateien bekommen gleich ein Vorschaubild mit.
+                Blueprint withPreview = format == BlueprintWriter.Format.LITEMATIC
+                        ? new Blueprint(captured.name(), target.getFileName().toString(), captured.sizeX(), captured.sizeY(),
+                        captured.sizeZ(), captured.palette(), captured.cells(), captured.warnings(), BlueprintPreviews.render(captured))
+                        : captured;
+                BlueprintWriter.write(target, BlueprintWriter.toNbt(withPreview, format, author, dataVersion));
+                BlueprintPreviews.prepare(target, withPreview);
+                mc.execute(() -> {
+                    saving = false;
+                    message = "Gespeichert: " + target.getFileName();
+                    Notifications.success("Bauplan gespeichert", target.getFileName() + " · " + captured.cells().size() + " Blöcke");
+                });
+            } catch (Exception failure) {
+                mc.execute(() -> {
+                    saving = false;
+                    failed(failure);
+                });
+            }
+        });
+    }
+
+    private Path uniqueFile(String name, BlueprintWriter.Format format) {
+        Path target = directory().resolve(name + format.extension);
+        for (int n = 2; Files.exists(target); n++) target = directory().resolve(name + " (" + n + ")" + format.extension);
+        return target;
+    }
+
+    /** Für Windows erlaubter Dateiname; leer → "Bauplan 2026-10-12 14-30". */
+    private static String cleanName(String raw) {
+        String name = raw == null ? "" : raw.replaceAll("[\\\\/:*?\"<>|\\p{Cntrl}]", "_").trim();
+        if (name.length() > 64) name = name.substring(0, 64).trim();
+        if (name.isEmpty() || name.startsWith(".")) {
+            name = "Bauplan " + java.time.LocalDateTime.now().format(java.time.format.DateTimeFormatter.ofPattern("yyyy-MM-dd HH-mm"));
+        }
+        return name;
+    }
+
+    private void renderSelection(WorldRenderContext context) {
+        if ((corner1 == null && corner2 == null) || mc.level == null
+                || !mc.level.dimension().location().toString().equals(selectionDimension)) return;
+        VertexConsumer lines = Render3D.lines(context);
+        if (corner1 != null) Render3D.box(context, lines, new AABB(corner1).inflate(0.03), Theme.ACCENT);
+        if (corner2 != null) Render3D.box(context, lines, new AABB(corner2).inflate(0.03), Theme.ACCENT_2);
+        AABB area = null;
+        if (hasSelection()) {
+            area = new AABB(corner1).minmax(new AABB(corner2));
+            Render3D.box(context, lines, area.inflate(0.01), Theme.alpha(Theme.ACCENT_2, 0.85F));
+        }
+        Render3D.flush(context);
+        if (area != null) {
+            Render3D.label(context, new Vec3(area.getCenter().x, area.maxY + 0.6, area.getCenter().z),
+                    "Auswahl · " + selectionSize(), selectionTooLarge() ? Theme.DANGER : Theme.ACCENT_2, 0.025F);
+            context.buffers().endBatch();
         }
     }
 
@@ -270,7 +457,7 @@ public final class Blueprints extends Module {
     @Override
     protected void onEnable() {
         // Ohne geladenen Plan gibt es nichts anzuzeigen: stattdessen die Dateiauswahl öffnen.
-        if (plan == null && !loading) {
+        if (plan == null && !loading && corner1 == null && corner2 == null) {
             mc.execute(() -> {
                 setEnabled(false, false);
                 if (mc.player != null) mc.setScreen(new BlueprintScreen(mc.screen));
@@ -287,10 +474,11 @@ public final class Blueprints extends Module {
     }
 
     @Override public void onWorldRender(WorldRenderContext context) {
+        renderSelection(context);
         hover = null;
         if (plan == null || !plan.inDimension(mc.level)) return;
-        renderer.render(plan, context, (float) opacity.get() / 100F, range.getInt(), outlines.get());
-        if (!blockInfo.get() || mc.level == null) return;
+        renderer.render(plan, context, renderStyle(), range.getInt());
+        if (!infoVisible() || mc.level == null) return;
         hover = findHover(context);
         if (hover != null) {
             VertexConsumer lines = Render3D.lines(context);
@@ -307,7 +495,37 @@ public final class Blueprints extends Module {
     private Hover hover;
 
     /** Nur gültig, solange die Vorschau läuft und Block-Info an ist. */
-    public Hover hover() { return isEnabled() && plan != null && blockInfo.get() ? hover : null; }
+    public Hover hover() { return isEnabled() && plan != null && infoVisible() ? hover : null; }
+
+    public static final String INFO_HOLD = "Taste halten";
+    public static final String INFO_TOGGLE = "Taste umschalten";
+    public static final String INFO_ALWAYS = "Immer";
+    public static final String INFO_OFF = "Aus";
+    /** Zustand für "Taste umschalten"; wird beim Wechsel der Einstellung zurückgesetzt. */
+    private boolean infoToggled;
+
+    /** Ob der Tooltip gerade gezeigt werden soll: abhängig von der Einstellung und der Info-Taste. */
+    public boolean infoVisible() {
+        return switch (blockInfo.get()) {
+            case INFO_ALWAYS -> true;
+            case INFO_HOLD -> ClientKeybinds.BLUEPRINT_INFO != null && ClientKeybinds.BLUEPRINT_INFO.isDown();
+            case INFO_TOGGLE -> infoToggled;
+            default -> false;
+        };
+    }
+
+    /** Druck auf die Info-Taste (aus ClientEvents); wirkt nur bei "Taste umschalten". */
+    public void onInfoKey() {
+        if (!blockInfo.is(INFO_TOGGLE) || plan == null) return;
+        infoToggled = !infoToggled;
+        Notifications.info("Block-Info", infoToggled ? "Eingeblendet" : "Ausgeblendet");
+    }
+
+    /** Für das Bauplan-Fenster: aktuelle Einstellung samt Taste, z.B. "Taste halten (Links Alt)". */
+    public String infoLabel() {
+        if (blockInfo.is(INFO_ALWAYS) || blockInfo.is(INFO_OFF) || ClientKeybinds.BLUEPRINT_INFO == null) return blockInfo.get();
+        return blockInfo.get() + " (" + ClientKeybinds.BLUEPRINT_INFO.getTranslatedKeyMessage().getString() + ")";
+    }
 
     /**
      * Läuft Block für Block entlang der Blickrichtung (Amanatides-Woo) bis zum ersten echten Block.
@@ -348,13 +566,16 @@ public final class Blueprints extends Module {
     }
 
     @Override public void onLeaveWorld() {
+        corner1 = corner2 = null;
+        selectionDimension = null;
+        saving = false;
         saveState();
         unload();
         message = "Eine .litematic-, .schem- oder Struktur-.nbt-Datei auswählen.";
     }
 
     @Override public String getHudInfo() {
-        if (plan == null) return "Kein Plan";
+        if (plan == null) return corner1 != null || corner2 != null ? "Aufnahme" : "Kein Plan";
         String progress = plan.count(BlueprintPlan.Status.CORRECT) + "/" + plan.blueprint.cells().size();
         return plan.layers == BlueprintPlan.Layers.ALL ? progress : progress + " · E" + (plan.layer + 1);
     }

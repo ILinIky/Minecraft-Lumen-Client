@@ -1,5 +1,6 @@
 package com.example.examplemod.gui.hud;
 
+import com.example.examplemod.feature.ChestMemory;
 import com.example.examplemod.feature.Hud;
 import com.example.examplemod.feature.Waypoints;
 import com.example.examplemod.gui.Theme;
@@ -286,6 +287,8 @@ public final class HudElements {
         private Waypoint target;
         private String line1, line2, line3;
         private boolean unreachable;
+        /** Gesuchte Kiste aus dem Kisten-Gedächtnis hat Vorrang vor dem Wegpunkt-Ziel. */
+        private boolean chestMode;
         private float relativeYaw;
 
         Compass(Hud hud) {
@@ -296,6 +299,20 @@ public final class HudElements {
         public void measure(Minecraft mc, boolean editing) {
             target = WaypointStore.target();
             LocalPlayer player = mc.player;
+            ChestMemory.Target chest = ModuleManager.CHEST_MEMORY == null ? null : ModuleManager.CHEST_MEMORY.target();
+            chestMode = player != null && chest != null && TeleportService.currentDimension().equals(chest.dimension());
+            if (chestMode) {
+                double dx = chest.x() - player.getX(), dz = chest.z() - player.getZ(), dy = chest.y() - player.getY();
+                relativeYaw = Mth.wrapDegrees((float) Math.toDegrees(Math.atan2(-dx, dz)) - player.getYRot());
+                line1 = "▣ " + chest.label();
+                String height = Math.abs(dy) < 2 ? "" : (dy > 0 ? "  ↑" : "  ↓") + (int) Math.abs(dy);
+                line2 = Waypoints.formatDistance(Math.sqrt(dx * dx + dy * dy + dz * dz)) + height;
+                line3 = null;
+                unreachable = false;
+                w = 30 + Math.max(mc.font.width(line1), mc.font.width(line2)) + 6;
+                h = 26;
+                return;
+            }
             if (player == null || (target == null && !editing)) { w = h = 0; return; }
             line3 = null;
             if (target == null) {
@@ -334,7 +351,7 @@ public final class HudElements {
         @Override
         public void render(GuiGraphics g, Minecraft mc, boolean editing, float delta) {
             panel(g, x, y, w, h);
-            int color = target != null ? target.color() : Theme.ACCENT;
+            int color = chestMode ? Theme.ACCENT_2 : target != null ? target.color() : Theme.ACCENT;
             int cx = x + 14, cy = y + 13;
             UiRender.roundRect(g, cx - 10, cy - 10, 20, 20, 10, Theme.alpha(color, 0.18F));
             if (unreachable) {
