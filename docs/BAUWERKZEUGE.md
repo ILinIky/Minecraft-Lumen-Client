@@ -30,6 +30,12 @@ geladenen Bauplans: Ersatzblock suchen, gilt sofort im ganzen Plan, wie Material
 wie Mittelklick, es wird nichts erzeugt), *In Kisten suchen* (Kisten-Gedächtnis) und bei
 eigenen Zielen *Aus Liste entfernen*. Die Einzelanzeige wird nicht gespeichert.
 
+*Nur diesen anzeigen* gilt gemeinsam für Sammelliste und Bauplan (auch über B → Material →
+Rechtsklick): Die Bauplan-Vorschau zeigt dann nur dieses Material, auf **allen Ebenen**
+unabhängig vom Ebenenfilter, und umrandet jede noch offene Stelle durch Wände hindurch. So
+findet man auch kleine Blöcke wie Schilder, Knöpfe oder Fackeln. Ist die Vorschau aus, wird
+sie dafür eingeschaltet. *Alle anzeigen* hebt den Filter an beiden Stellen auf.
+
 Ungeprüfte Bauplanpositionen zählen zum Bedarf. Bei deaktivierter Bauplanvorschau
 oder in einer anderen Dimension zeigen die Ziele den letzten Abgleich; das
 Sammellisten-Menü kennzeichnet dies. Ohne geladenen Bauplan wartet die Verknüpfung.

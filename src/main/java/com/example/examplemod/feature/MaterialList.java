@@ -42,8 +42,11 @@ public final class MaterialList extends Module {
         return hideDone.get() ? incomplete : rows;
     }
     public Item solo() { return solo; }
-    /** Nur dieses Item zeigen; {@code null} zeigt wieder alle. */
-    public void solo(Item item) { solo = item; }
+    /**
+     * Nur dieses Item zeigen; {@code null} oder ein Item, das nicht in der Liste steht, zeigt wieder alle.
+     * Aufruf über {@link Blueprints#focusItem}, damit Sammelliste und Bauplan gemeinsam filtern.
+     */
+    public void solo(Item item) { solo = item != null && rows.stream().anyMatch(r -> r.item() == item) ? item : null; }
     public boolean isManual(Item item) { return manual.containsKey(BuiltInRegistries.ITEM.getKey(item).toString()); }
     public void pinPlan() {
         followPlan.set(true);

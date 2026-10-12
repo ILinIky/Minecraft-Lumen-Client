@@ -52,13 +52,13 @@ public final class HudRenderer {
             com.example.examplemod.feature.MaterialList.Row row = list.rowAt(mouseX, mouseY);
             if (row == null) {
                 if (feature.solo() == null) return false;
-                feature.solo(null);
+                ModuleManager.BLUEPRINTS.focusItem(null);
                 return true;
             }
             if (button != 1) return false;
             List<HudMenu.Entry> entries = new ArrayList<>();
             boolean solo = feature.solo() == row.item();
-            entries.add(new HudMenu.Entry(solo ? "Alle anzeigen" : "Nur diesen anzeigen", () -> feature.solo(solo ? null : row.item())));
+            entries.add(new HudMenu.Entry(solo ? "Alle anzeigen" : "Nur diesen anzeigen", () -> ModuleManager.BLUEPRINTS.focusItem(solo ? null : row.item())));
             // Materialien des geladenen Bauplans lassen sich direkt im ganzen Plan ersetzen.
             if (ModuleManager.BLUEPRINTS.usesMaterial(row.item())) {
                 entries.add(new HudMenu.Entry("Ersetzen …", () -> ModuleManager.BLUEPRINTS.openReplace(null, row.item())));

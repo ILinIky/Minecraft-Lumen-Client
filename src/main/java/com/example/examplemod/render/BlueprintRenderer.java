@@ -103,12 +103,15 @@ public final class BlueprintRenderer {
         // Keep only lightweight error boxes; do not interleave line and quad buffers.
         List<Candidate> markers = new ArrayList<>();
         List<Candidate> fills = new ArrayList<>();
+        // Gewähltes Material: jede offene Stelle umranden, auch kleine Blöcke wie Schilder oder Knöpfe.
+        List<Candidate> focused = new ArrayList<>();
         for (Candidate candidate : candidates) {
             Blueprint.Cell cell = plan.blueprint.cells().get(candidate.index);
             BlueprintPlan.Status status = plan.compare(level, candidate.index, candidate.pos);
             if (status == BlueprintPlan.Status.UNCHECKED || (plan.onlyMissing && status == BlueprintPlan.Status.CORRECT)) continue;
             // Übernommene Abweichung: dort steht die gewollte Variante, keine Vorschau darüber zeichnen.
             if (status == BlueprintPlan.Status.CORRECT && plan.accepted(candidate.index)) continue;
+            if (plan.focus != null && status != BlueprintPlan.Status.CORRECT) focused.add(candidate);
             BlockState state = plan.state(cell);
             boolean model = state != null && state.getRenderShape() == RenderShape.MODEL && !failedModels.contains(state);
             // A real wrong block occludes the ghost; its outline remains visible at the block surface.
@@ -173,6 +176,20 @@ public final class BlueprintRenderer {
         // Ursprung als kleiner Würfel in der zweiten Akzentfarbe.
         Render3D.box(context, lines, new AABB(o).deflate(0.3), Theme.ACCENT_2);
         Render3D.flushWorld(context);
+
+        if (!focused.isEmpty()) {
+            // Durch Wände sichtbar: Blockform in der Zweitakzentfarbe, dazu ein schwacher Würfel als Rahmen.
+            VertexConsumer through = Render3D.lines(context);
+            int frame = Theme.alpha(Theme.ACCENT_2, 0.35F);
+            for (Candidate mark : focused) {
+                BlockState state = plan.state(plan.blueprint.cells().get(mark.index));
+                Render3D.box(context, through, new AABB(mark.pos).inflate(0.04), frame);
+                if (state != null) {
+                    for (AABB box : boxes(state, view, mark.pos)) Render3D.box(context, through, box.move(mark.pos).inflate(0.01), Theme.ACCENT_2);
+                }
+            }
+            Render3D.flush(context);
+        }
     }
 
     private static List<AABB> boxes(BlockState state, BlockAndTintGetter view, BlockPos pos) {

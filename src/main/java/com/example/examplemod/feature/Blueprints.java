@@ -147,6 +147,7 @@ public final class Blueprints extends Module {
                             loaded.restoreAccepted(placement.accepted());
                         }
                         plan = loaded;
+                        focusItem = null;
                         sourceBlueprint = data;
                         replacements.clear();
                         replacements.putAll(restored);
@@ -183,6 +184,7 @@ public final class Blueprints extends Module {
         if (pending != null) pending.cancel(true);
         loading = false;
         plan = null;
+        focusItem = null;
         sourceBlueprint = null;
         replacements.clear();
         file = null;
@@ -566,6 +568,7 @@ public final class Blueprints extends Module {
         renderSelection(context);
         hover = null;
         if (plan == null || !plan.inDimension(mc.level)) return;
+        syncFocus();
         renderer.render(plan, context, renderStyle(), range.getInt());
         // Der anvisierte Geisterblock ist immer umrandet; den Tooltip gibt es nur mit Block-Info.
         if (mc.level == null) return;
@@ -709,12 +712,44 @@ public final class Blueprints extends Module {
 
     // ---- Materialfilter: nur ein Material in der Vorschau ----
 
-    /** Nur dieses Material zeigen; dasselbe nochmal oder {@code null} zeigt wieder alle. */
+    /** Gewähltes Item; überlebt einen Materialtausch, solange es im Plan vorkommt. */
+    private Item focusItem;
+
+    /** Aus dem Bauplan-Fenster: dasselbe Material nochmal oder {@code null} zeigt wieder alle. */
     public void focusMaterial(BlueprintPlan.Material material) {
         if (plan == null) return;
-        plan.focus = plan.focus == material ? null : material;
-        if (plan.focus == null) Notifications.info("Bauplan", "Alle Materialien angezeigt");
-        else Notifications.info("Bauplan", "Nur " + plan.focus.name + " angezeigt");
+        boolean off = material == null || plan.focus == material;
+        focus(off || material.item == Items.AIR ? null : material.item, off ? null : material);
+    }
+
+    /** Aus der Sammelliste: nur dieses Item; {@code null} zeigt wieder alle. */
+    public void focusItem(Item item) { focus(item, item == null ? null : materialFor(item)); }
+
+    /**
+     * Gemeinsamer Filter für Bauplan und Sammelliste: Die Vorschau zeigt nur dieses Material (über alle
+     * Ebenen, jede offene Stelle umrandet), die Sammelliste nur diesen Eintrag.
+     */
+    private void focus(Item item, BlueprintPlan.Material material) {
+        focusItem = item;
+        if (plan != null) plan.focus = material;
+        // Damit man sieht, wohin das Material gehört: Vorschau einschalten.
+        if (material != null && !isEnabled()) setEnabled(true, false);
+        if (ModuleManager.MATERIAL_LIST != null) ModuleManager.MATERIAL_LIST.solo(item);
+        String name = material != null ? material.name : item != null ? new ItemStack(item).getHoverName().getString() : null;
+        if (name == null) Notifications.info("Bauplan", "Wieder alles angezeigt");
+        else if (material != null) Notifications.info("Nur " + name, "Im Bauplan umrandet, auf allen Ebenen");
+        else Notifications.info("Sammelliste", "Nur " + name);
+    }
+
+    private BlueprintPlan.Material materialFor(Item item) {
+        if (plan == null || item == Items.AIR) return null;
+        for (BlueprintPlan.Material material : plan.materials) if (material.item == item) return material;
+        return null;
+    }
+
+    /** Nach einem Materialtausch ist der Plan neu: gewähltes Material wieder zuordnen. */
+    private void syncFocus() {
+        if (plan != null && focusItem != null && (plan.focus == null || plan.focus.item != focusItem)) plan.focus = materialFor(focusItem);
     }
 
     // ---- Mittelklick: Item des anvisierten Bauplan-Blocks in die Hand nehmen ----

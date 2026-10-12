@@ -69,7 +69,7 @@ public final class BlueprintPlan {
     public Layers layers = Layers.ALL;
     public int layer;
     public boolean onlyMissing = true;
-    /** Nur dieses Material in der Vorschau zeigen; {@code null} = alle. */
+    /** Nur dieses Material in der Vorschau zeigen, über alle Ebenen; {@code null} = alle. */
     public Material focus;
 
     public BlueprintPlan(Blueprint blueprint, BlockPos origin, String dimension) {
@@ -227,7 +227,10 @@ public final class BlueprintPlan {
     public Status status(int i) { return Status.values()[status[i]]; }
     public int count(Status value) { return counts[value.ordinal()]; }
     public boolean inDimension(ClientLevel level) { return level != null && level.dimension().location().toString().equals(dimension); }
-    public boolean visibleLayer(int y) { return layers == Layers.ALL || (layers == Layers.SINGLE ? y == layer : y <= layer); }
+    /** Mit gewähltem Material gelten alle Ebenen, damit jede Stelle dieses Materials zu sehen ist. */
+    public boolean visibleLayer(int y) {
+        return focus != null || layers == Layers.ALL || (layers == Layers.SINGLE ? y == layer : y <= layer);
+    }
 
     /** Neighbor lookup uses the whole rotated plan, so stairs/fences retain their stored shapes. */
     public BlockState stateAt(BlockPos worldPos) {
