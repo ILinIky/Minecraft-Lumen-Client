@@ -66,7 +66,7 @@ Profile speichern. Akzentfarbe und Stil (Dunkel, Mitternacht, Hell) lassen sich 
 ### ⚙ Client
 | Modul | Beschreibung |
 |---|---|
-| **HUD** | Logo, Modulliste, Koordinaten, Infos, Kompass, Rüstung und Minimap, alles mit der Maus verschiebbar |
+| **HUD** | Logo mit FPS, Koordinaten, Ping, Modulliste, Kompass, Rüstung und Minimap, alles mit der Maus verschiebbar |
 | **Design** | Akzentfarbe (6 Farben) und Stil (Dunkel, Mitternacht, Hell) |
 | **Profile** | Komplette Einstellungen speichern und mit einem Klick wechseln |
 

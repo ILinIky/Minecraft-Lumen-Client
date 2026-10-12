@@ -2,7 +2,6 @@ package com.example.examplemod;
 
 import com.example.examplemod.feature.Freecam;
 import com.example.examplemod.feature.Fullbright;
-import com.example.examplemod.feature.Hud;
 import com.example.examplemod.feature.NoFall;
 import com.example.examplemod.chest.ChestStore;
 import com.example.examplemod.gui.BlueprintScreen;
@@ -145,14 +144,6 @@ public class ClientEvents {
     @SubscribeEvent
     public static boolean onMouseScroll(InputEvent.MouseScrollingEvent event) {
         return ModuleManager.ZOOM != null && ModuleManager.ZOOM.onScroll(event.getDeltaY());
-    }
-
-    /** Klicks pro Sekunde für das HUD zählen. */
-    @SubscribeEvent
-    public static void onMouseButton(InputEvent.MouseButton.Post event) {
-        if (event.getAction() == GLFW.GLFW_PRESS && Minecraft.getInstance().screen == null) {
-            Hud.recordClick(event.getButton());
-        }
     }
 
     /** Modul-Tasten aus dem Client-Menü (nicht zusammen mit F3-Kombinationen). */

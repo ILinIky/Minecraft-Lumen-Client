@@ -32,7 +32,7 @@ public final class HudElements {
     private HudElements() {}
 
     public static List<HudElement> create(Hud hud) {
-        return List.of(new Watermark(hud), new Coordinates(hud), new Info(hud), new ModuleList(hud),
+        return List.of(new Watermark(hud), new Coordinates(hud), new Ping(hud), new ModuleList(hud),
                 new Compass(hud), new Armor(hud), new MinimapElement(ModuleManager.MINIMAP));
     }
 
@@ -44,19 +44,15 @@ public final class HudElements {
 
     // ---- Logo + FPS ----
     static final class Watermark extends HudElement {
-        private final Hud hud;
-
         Watermark(Hud hud) {
-            super("watermark", "Logo", hud.watermark, 0, 0, 4, 4);
-            this.hud = hud;
+            super("watermark", "Logo + FPS", hud.watermark, 0, 0, 4, 4);
         }
 
-        private String fpsText(Minecraft mc) { return hud.fps.get() ? mc.getFps() + " FPS" : null; }
+        private static String fpsText(Minecraft mc) { return mc.getFps() + " FPS"; }
 
         @Override
         public void measure(Minecraft mc, boolean editing) {
-            String fps = fpsText(mc);
-            w = mc.font.width(Theme.CLIENT_NAME) + 12 + (fps != null ? mc.font.width(fps) + 10 : 0);
+            w = mc.font.width(Theme.CLIENT_NAME) + 12 + mc.font.width(fpsText(mc)) + 10;
             h = 15;
         }
 
@@ -72,23 +68,18 @@ public final class HudElements {
                 g.drawString(font, ch, cx, y + 4, Theme.accentWave(i * 0.06F), shadow());
                 cx += font.width(ch);
             }
-            String fps = fpsText(mc);
-            if (fps != null) {
-                g.fill(cx + 4, y + 3, cx + 5, y + 12, Theme.alpha(Theme.TEXT_MUTED, 0.5F));
-                g.drawString(font, fps, cx + 9, y + 4, Theme.TEXT_DIM, shadow());
-            }
+            g.fill(cx + 4, y + 3, cx + 5, y + 12, Theme.alpha(Theme.TEXT_MUTED, 0.5F));
+            g.drawString(font, fpsText(mc), cx + 9, y + 4, Theme.TEXT_DIM, shadow());
         }
     }
 
     // ---- Koordinaten ----
     static final class Coordinates extends HudElement {
-        private final Hud hud;
         private final List<String[]> lines = new ArrayList<>();
         private int labelW;
 
         Coordinates(Hud hud) {
             super("coordinates", "Koordinaten", hud.coordinates, 0, 0, 4, 23);
-            this.hud = hud;
         }
 
         @Override
@@ -97,12 +88,13 @@ public final class HudElements {
             LocalPlayer player = mc.player;
             if (player == null) { w = h = 0; return; }
             lines.add(new String[]{"XYZ", String.format(Locale.ROOT, "%.1f / %.0f / %.1f", player.getX(), player.getY(), player.getZ())});
-            if (hud.netherCoordinates.get() && mc.level != null) {
+            // Passende Stelle in der anderen Dimension (1 Block im Nether = 8 in der Oberwelt), z.B. für Portale.
+            if (mc.level != null) {
                 String dimension = mc.level.dimension().location().getPath();
                 if (dimension.equals("overworld")) {
-                    lines.add(new String[]{"Nether", String.format(Locale.ROOT, "%.0f / %.0f", player.getX() / 8, player.getZ() / 8)});
+                    lines.add(new String[]{"Im Nether", String.format(Locale.ROOT, "%.0f / %.0f", player.getX() / 8, player.getZ() / 8)});
                 } else if (dimension.equals("the_nether")) {
-                    lines.add(new String[]{"Oberwelt", String.format(Locale.ROOT, "%.0f / %.0f", player.getX() * 8, player.getZ() * 8)});
+                    lines.add(new String[]{"In Oberwelt", String.format(Locale.ROOT, "%.0f / %.0f", player.getX() * 8, player.getZ() * 8)});
                 }
             }
             lines.add(new String[]{"Richtung", switch (player.getDirection()) {
@@ -134,60 +126,32 @@ public final class HudElements {
         }
     }
 
-    // ---- Ping, Uhrzeit, CPS ----
-    static final class Info extends HudElement {
-        private final Hud hud;
-        private final List<String[]> lines = new ArrayList<>();
-        private final List<Integer> colors = new ArrayList<>();
-        private int labelW;
+    // ---- Ping ----
+    static final class Ping extends HudElement {
+        private String text;
+        private int color;
 
-        Info(Hud hud) {
-            super("info", "Infos", hud.info, 0, 0, 4, 69);
-            this.hud = hud;
+        Ping(Hud hud) {
+            // Kennung "info" bleibt, damit gespeicherte Positionen erhalten bleiben.
+            super("info", "Ping", hud.ping, 0, 0, 4, 69);
         }
 
         @Override
         public void measure(Minecraft mc, boolean editing) {
-            lines.clear();
-            colors.clear();
             if (mc.player == null || mc.level == null) { w = h = 0; return; }
-            if (hud.ping.get()) {
-                PlayerInfo info = mc.getConnection() == null ? null : mc.getConnection().getPlayerInfo(mc.player.getUUID());
-                int ping = info == null ? 0 : info.getLatency();
-                lines.add(new String[]{"Ping", mc.hasSingleplayerServer() ? "lokal" : ping + " ms"});
-                colors.add(ping < 80 ? Theme.SUCCESS : ping < 180 ? Theme.WARNING : Theme.DANGER);
-            }
-            if (hud.time.get()) {
-                long day = mc.level.getDayTime() % 24000L;
-                int hours = (int) ((day / 1000 + 6) % 24);
-                int minutes = (int) (day % 1000 * 60 / 1000);
-                lines.add(new String[]{"Zeit", String.format(Locale.ROOT, "%02d:%02d", hours, minutes)});
-                colors.add(day >= 13000 && day < 23000 ? Theme.INFO : Theme.WARNING);
-            }
-            if (hud.cps.get()) {
-                lines.add(new String[]{"CPS", Hud.cps(0) + " | " + Hud.cps(1)});
-                colors.add(Theme.TEXT);
-            }
-            if (lines.isEmpty()) { w = h = 0; return; }
-            labelW = 0;
-            int valueW = 0;
-            for (String[] line : lines) {
-                labelW = Math.max(labelW, mc.font.width(line[0]));
-                valueW = Math.max(valueW, mc.font.width(line[1]));
-            }
-            w = labelW + valueW + 18;
-            h = lines.size() * 11 + 6;
+            PlayerInfo info = mc.getConnection() == null ? null : mc.getConnection().getPlayerInfo(mc.player.getUUID());
+            int ping = info == null ? 0 : info.getLatency();
+            text = mc.hasSingleplayerServer() ? "lokal" : ping + " ms";
+            color = ping < 80 ? Theme.SUCCESS : ping < 180 ? Theme.WARNING : Theme.DANGER;
+            w = mc.font.width("Ping") + mc.font.width(text) + 18;
+            h = 17;
         }
 
         @Override
         public void render(GuiGraphics g, Minecraft mc, boolean editing, float delta) {
             panel(g, x, y, w, h);
-            int ly = y + 4;
-            for (int i = 0; i < lines.size(); i++) {
-                g.drawString(mc.font, lines.get(i)[0], x + 6, ly, Theme.ACCENT_2, shadow());
-                g.drawString(mc.font, lines.get(i)[1], x + 12 + labelW, ly, colors.get(i), shadow());
-                ly += 11;
-            }
+            g.drawString(mc.font, "Ping", x + 6, y + 4, Theme.ACCENT_2, shadow());
+            g.drawString(mc.font, text, x + 12 + mc.font.width("Ping"), y + 4, color, shadow());
         }
     }
 
