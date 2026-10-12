@@ -25,14 +25,39 @@ public final class UiRender {
 
     /** Abgerundete Fläche mit 1px Rahmen. */
     public static void panel(GuiGraphics g, int x, int y, int w, int h, int radius, int fill, int border) {
-        roundRect(g, x, y, w, h, radius, border);
-        roundRect(g, x + 1, y + 1, w - 2, h - 2, Math.max(0, radius - 1), fill);
+        if (w <= 0 || h <= 0) return;
+        // Draw only the perimeter: an opaque rectangle below the fill defeats transparency.
+        int r = Math.max(0, Math.min(radius, Math.min(w, h) / 2));
+        int edgeRows = Math.max(1, r);
+        for (int row = 0; row < h; row++) {
+            if (row == edgeRows && h > 2 * edgeRows) {
+                g.fill(x, y + row, x + 1, y + h - edgeRows, border);
+                g.fill(x + w - 1, y + row, x + w, y + h - edgeRows, border);
+                row = h - edgeRows;
+            }
+            int outer = inset(r, row, h);
+            if (row == 0 || row == h - 1 || w <= 2) {
+                g.fill(x + outer, y + row, x + w - outer, y + row + 1, border);
+            } else {
+                int inner = 1 + inset(Math.max(0, r - 1), row - 1, h - 2);
+                g.fill(x + outer, y + row, x + inner, y + row + 1, border);
+                g.fill(x + w - inner, y + row, x + w - outer, y + row + 1, border);
+            }
+        }
+        roundRect(g, x + 1, y + 1, w - 2, h - 2, Math.max(0, r - 1), fill);
+    }
+
+    private static int inset(int radius, int row, int height) {
+        int edge = Math.min(row, height - row - 1);
+        if (radius <= 0 || edge >= radius) return 0;
+        double dy = radius - edge - .5;
+        return (int)Math.round(radius - Math.sqrt(radius * radius - dy * dy));
     }
 
     /** Weicher Schatten unter Fenstern. */
     public static void shadow(GuiGraphics g, int x, int y, int w, int h, int radius) {
         for (int i = 6; i >= 1; i--) {
-            roundRect(g, x - i, y - i + 2, w + i * 2, h + i * 2, radius + i, Theme.alpha(Theme.SHADOW, 0.35F / i));
+            roundRect(g, x - i, y - i + 2, w + i * 2, h + i * 2, radius + i, Theme.alpha(Theme.SHADOW, Theme.menuOpacity * 0.35F / i));
         }
     }
 

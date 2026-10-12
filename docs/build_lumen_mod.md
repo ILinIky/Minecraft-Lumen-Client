@@ -48,6 +48,9 @@ Bei neuen Funktionen **diese Tabelle zuerst ergänzen**. Sie ist die Grundlage f
 | Auto-Abwurf (inkl. „Behalten bis X“) | `auto_drop` | ✔ | ✔ | Komfort, wirft nur per normalem Inventar-Klick. Bei Bedarf vor dem Umsetzen neu entscheiden |
 | Kisten-Gedächtnis | `chest_memory` | ✔ | ✔ | Kennt nur selbst geöffnete Behälter. Achtung: Der Kompass nutzt `TeleportService.currentDimension()`, also beim Entkoppeln mit erfassen |
 | Baupläne speichern (Aufnehmen) | `blueprints` | ✔ | ✔ | liest nur geladene Chunks |
+| Bauplan-Material ersetzen | `blueprints` | ✔ | ✔ | Ersetzungen pro Platzierung gespeichert, Originaldatei unverändert |
+| Material-Sammelliste | `material_list` | ✔ | ✔ | Eigene Ziele und automatisch verknüpfter Bauplan-Bedarf, HUD-Element |
+| Spieler-Radar | `player_radar` | ✔ | offen | Auswahl bestimmter Spieler und Entfernungsanzeige im Radius; Zugehörigkeit zur geplanten Mods-Edition noch entscheiden |
 
 ## 3. Aufbau
 

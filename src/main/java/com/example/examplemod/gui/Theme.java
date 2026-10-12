@@ -28,9 +28,24 @@ public final class Theme {
     public static int HUD_BG, TOAST_BG;
     public static int ACCENT, ACCENT_2, ACCENT_SOFT;
     public static boolean light;
+    public static float menuOpacity = .95F;
 
     static {
         apply("Violett", "Dunkel");
+    }
+
+    /** Menu surfaces only. Keep text, fields, HUD and notifications at their normal contrast. */
+    public static void applyTransparency(int opacityPercent, int dimPercent) {
+        menuOpacity = Math.max(.2F, Math.min(1F, opacityPercent / 100F));
+        int opacity = Math.round(menuOpacity * 255);
+        WINDOW = (WINDOW & 0xFFFFFF) | opacity << 24;
+        SIDEBAR = (SIDEBAR & 0xFFFFFF) | opacity << 24;
+        HEADER = (HEADER & 0xFFFFFF) | opacity << 24;
+        CARD = (CARD & 0xFFFFFF) | opacity << 24;
+        CARD_HOVER = (CARD_HOVER & 0xFFFFFF) | opacity << 24;
+        CARD_ACTIVE = (CARD_ACTIVE & 0xFFFFFF) | opacity << 24;
+        DANGER_BG = (DANGER_BG & 0xFFFFFF) | opacity << 24;
+        OVERLAY = (OVERLAY & 0xFFFFFF) | Math.round(Math.max(0, Math.min(80, dimPercent)) * 2.55F) << 24;
     }
 
     private Theme() {}

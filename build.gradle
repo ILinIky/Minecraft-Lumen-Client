@@ -293,3 +293,31 @@ tasks.register('chestSearchTest', JavaExec) {
     mainClass = 'com.example.examplemod.chest.ChestSearchTest'
 }
 tasks.named('check') { dependsOn tasks.named('chestSearchTest') }
+
+tasks.register('materialTargetsTest', JavaExec) {
+    dependsOn tasks.named('testClasses')
+    classpath = sourceSets.test.runtimeClasspath
+    mainClass = 'com.example.examplemod.building.MaterialTargetsTest'
+}
+tasks.named('check') { dependsOn tasks.named('materialTargetsTest') }
+
+tasks.register('materialScrollTest', JavaExec) {
+    dependsOn tasks.named('testClasses')
+    classpath = sourceSets.test.runtimeClasspath
+    mainClass = 'com.example.examplemod.building.MaterialScrollTest'
+}
+tasks.named('check') { dependsOn tasks.named('materialScrollTest') }
+
+tasks.register('blueprintMaterialTest', JavaExec) {
+    dependsOn tasks.named('testClasses')
+    classpath = sourceSets.test.runtimeClasspath
+    mainClass = 'com.example.examplemod.blueprint.BlueprintMaterialTest'
+}
+tasks.named('check') { dependsOn tasks.named('blueprintMaterialTest') }
+
+tasks.register('playerRadarTest', JavaExec) {
+    dependsOn tasks.named('testClasses')
+    classpath = sourceSets.test.runtimeClasspath
+    mainClass = 'com.example.examplemod.feature.PlayerRadarTest'
+}
+tasks.named('check') { dependsOn tasks.named('playerRadarTest') }

@@ -10,6 +10,8 @@ import com.google.gson.JsonObject;
 public class Design extends Module {
     private final Setting.Mode accent;
     private final Setting.Mode style;
+    private final Setting.Slider menuOpacity;
+    private final Setting.Slider backgroundDim;
 
     public Design() {
         super("design", "Design", "Akzentfarbe und Stil der Menüs", Category.CLIENT);
@@ -17,10 +19,16 @@ public class Design extends Module {
                 Theme.ACCENTS[0], Theme.ACCENTS).onChange(this::apply));
         style = add(new Setting.Mode("Stil", "Dunkel, Mitternacht (blau) oder Hell",
                 Theme.STYLES[0], Theme.STYLES).onChange(this::apply));
+        menuOpacity = add(new Setting.Slider("Menü-Deckkraft", "Niedriger = transparent; Texte und Suchfelder bleiben gut lesbar",
+                95, 20, 100, 5, "%").onChange(this::apply));
+        backgroundDim = add(new Setting.Slider("Hintergrund abdunkeln", "0 % lässt die Spielwelt hinter dem Menü unverändert hell",
+                60, 0, 80, 5, "%").onChange(this::apply));
+        apply();
     }
 
     private void apply() {
         Theme.apply(accent.get(), style.get());
+        Theme.applyTransparency(menuOpacity.getInt(), backgroundDim.getInt());
     }
 
     @Override

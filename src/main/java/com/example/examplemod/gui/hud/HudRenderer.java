@@ -18,6 +18,21 @@ public final class HudRenderer {
 
     static float frameDelta() { return frameDelta; }
 
+    /** Null mouse coordinates: gameplay shortcut. Otherwise only scroll under the pointer. */
+    public static boolean scrollMaterials(double delta, Double mouseX, Double mouseY) {
+        Minecraft mc = Minecraft.getInstance();
+        Hud hud = ModuleManager.HUD;
+        if (mc.player == null || hud == null || !hud.isEnabled() || mc.options.hideGui || mc.getDebugOverlay().showDebugScreen()) return false;
+        for (HudElement element : hud.elements()) {
+            if (!(element instanceof MaterialListElement list) || !element.isVisible()) continue;
+            element.measure(mc, false);
+            element.layout(mc, mc.getWindow().getGuiScaledWidth(), mc.getWindow().getGuiScaledHeight(), false);
+            if (element.h <= 0 || mouseX != null && !com.example.examplemod.gui.UiRender.inside(mouseX, mouseY, element.x, element.y, element.w, element.h)) return false;
+            return list.scroll(delta);
+        }
+        return false;
+    }
+
     private static void tickFrame() {
         long now = Util.getMillis();
         frameDelta = lastFrame == 0 ? 0 : Math.min(0.1F, (now - lastFrame) / 1000F);
