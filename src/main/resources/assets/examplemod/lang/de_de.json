@@ -1,0 +1,12 @@
+{
+  "key.categories.examplemod": "Lumen Client",
+  "key.examplemod.menu": "Client-Menü öffnen",
+  "key.examplemod.waypoints": "Wegpunkte öffnen",
+  "key.examplemod.save_waypoint": "Wegpunkt speichern",
+  "key.examplemod.last_teleport": "Zum letzten Wegpunkt teleportieren",
+  "key.examplemod.zoom": "Zoom (halten)",
+  "key.examplemod.blueprints": "Baupläne öffnen",
+  "key.examplemod.blueprint_layer_up": "Bauplan: Ebene höher",
+  "key.examplemod.blueprint_layer_down": "Bauplan: Ebene tiefer",
+  "itemGroup.examplemod": "Lumen"
+}

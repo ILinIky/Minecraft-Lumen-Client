@@ -1,0 +1,19 @@
+# Zeilenenden einheitlich halten, egal auf welchem System ausgecheckt wird.
+* text=auto
+
+# Windows-Skripte brauchen CRLF, Shell-Skripte LF.
+*.bat text eol=crlf
+*.ps1 text eol=crlf
+gradlew text eol=lf
+*.sh text eol=lf
+
+# Binaerdateien nie veraendern.
+*.jar binary
+*.png binary
+*.litematic binary
+*.schem binary
+*.nbt binary
+
+# Generierte Dateien von Forge immer mit LF.
+src/generated/**/.cache/cache text eol=lf
+src/generated/**/*.json text eol=lf

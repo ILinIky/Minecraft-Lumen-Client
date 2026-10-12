@@ -1,0 +1,49 @@
+# ---------------------------------------------------------------
+#  Lumen Client - nur Quellcode und Build-Konfiguration hochladen
+# ---------------------------------------------------------------
+
+# Build-Ausgaben (werden mit Lumen_Bauen_und_Installieren.bat neu erzeugt)
+build/
+.gradle/
+out/
+bin/
+releases/
+*.jar
+!gradle/wrapper/gradle-wrapper.jar
+
+# Minecraft-Laufzeit, Logs und Testlaeufe
+run/
+run-data/
+logs/
+*.log
+crash-reports/
+
+# Interne Sicherungen und Zwischenstaende
+.build-tmp/
+
+# Forge-MDK-Vorlagen (beschreiben Forge selbst, nicht dieses Projekt)
+LICENSE.txt
+CREDITS.txt
+forge*changelog.txt
+
+# IntelliJ IDEA
+.idea/
+*.iml
+*.ipr
+*.iws
+
+# Eclipse
+eclipse/
+.settings/
+.metadata/
+.classpath
+.project
+*.launch
+
+# VS Code
+.vscode/
+
+# Betriebssystem
+Thumbs.db
+desktop.ini
+.DS_Store
