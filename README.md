@@ -105,6 +105,10 @@ Baupläne aus älteren Minecraft-Versionen werden automatisch umgewandelt, z. B.
   Position wählbar: kompakt *Oben mittig* (Standard) oder *Am Fadenkreuz*.
 - **Blockumrandung:** Wird der Bauplan eingeschaltet, schaltet Lumen die Blockumrandung mit ein (falls sie aus war) und beim
   Ausschalten wieder aus. So sieht man immer, wo der nächste Block landet.
+- **Abweichung übernehmen** (**N**, änderbar): Auf einen falsch gesetzten Block (rot/gelb) zielen und drücken, dann zählt
+  diese Stelle als richtig, z. B. für gewollte Varianten (Fichte statt Eiche, andere Treppe). Nochmal drücken nimmt es zurück.
+  Wird der Block abgebaut, fehlt er wieder. Übernommene Stellen werden pro Welt mitgespeichert und lassen sich im
+  Bauplan-Fenster alle auf einmal zurücksetzen.
 - **Markierungen:** *Aus*, *Nur Fehler* (Standard: 🔴 falscher Block · 🟡 falsche Ausrichtung · 🟣 unbekannt) oder *Alles* (zusätzlich 🔵 fehlt).
 - **Deckkraft** der Vorschau von 15 bis 100 %.
 - **Mittelklick wählt Bauplan-Block** (Standard: an): Mausrad-Klick auf einen noch nicht gebauten Block nimmt das passende Item
@@ -131,6 +135,7 @@ Gespeichert werden Blöcke mit Ausrichtung und Zustand, aber keine Kisteninhalte
 | **B** | Baupläne |
 | **Bild ↑ / Bild ↓** | Bauplan-Ebene wechseln |
 | **Alt** (halten, änderbar) | Bauplan: Block-Info zum anvisierten Block |
+| **N** (änderbar) | Bauplan: falsch gesetzten Block als gewollte Abweichung übernehmen |
 | **Mausrad-Klick** | Bauplan: Item des anvisierten, noch nicht gebauten Blocks in die Hand nehmen |
 | **K** | Kisten-Gedächtnis durchsuchen |
 | **F6** | Wegpunkt-Menü |

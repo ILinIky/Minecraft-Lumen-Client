@@ -39,7 +39,8 @@ public final class BlueprintScreen extends ClientScreen {
     /** Vorschaubild unter der Maus, wird nach dem Inhalt groß eingeblendet. */
     private Path hoverPreview;
     /** Wartet auf die neue Taste für die Block-Info. */
-    private boolean bindingInfoKey;
+    /** Taste, die gerade neu belegt wird, sonst {@code null}. */
+    private KeyMapping binding;
     private List<Path> files = List.of();
     private Tab tab;
     private BlueprintPlan seenPlan;
@@ -146,27 +147,27 @@ public final class BlueprintScreen extends ClientScreen {
     }
 
     /**
-     * Taste für die Block-Info direkt hier belegen: Knopf klicken, dann Taste (oder Maus-Seitentaste) drücken.
-     * Esc bricht ab, Entf/Rücktaste stellt den Standard (linkes Alt) wieder her. Doppelte Belegungen werden angezeigt.
+     * Taste direkt hier belegen: Knopf klicken, dann Taste (oder Maus-Seitentaste) drücken.
+     * Esc bricht ab, Entf/Rücktaste stellt den Standard wieder her. Doppelte Belegungen werden angezeigt.
      */
-    private int renderInfoKey(GuiGraphics g, int mx, int my, int x, int y, int w) {
-        KeyMapping key = ClientKeybinds.BLUEPRINT_INFO;
+    private int renderKey(GuiGraphics g, int mx, int my, int x, int y, int w, KeyMapping key, String title, String defaultName) {
         if (key == null) return y;
+        boolean listening = binding == key;
         UiRender.roundRect(g, x, y, w, 24, 4, Theme.CARD);
-        g.drawString(font, "Block-Info-Taste", x + 8, y + 8, Theme.TEXT_DIM, false);
-        String label = bindingInfoKey ? "Taste drücken …" : KeyBindings.keyName(key);
+        g.drawString(font, title, x + 8, y + 8, Theme.TEXT_DIM, false);
+        String label = listening ? "Taste drücken …" : KeyBindings.keyName(key);
         int chipW = Math.max(90, font.width(label) + 16);
         int chipX = x + w - chipW - 30;
         boolean hover = hovered(mx, my, chipX, y + 3, chipW, 18);
-        int border = bindingInfoKey ? Theme.accentWave(0) : hover ? Theme.SWITCH_OFF_HOVER : Theme.FIELD_BORDER;
-        UiRender.panel(g, chipX, y + 3, chipW, 18, 4, bindingInfoKey ? Theme.ACCENT_SOFT : Theme.FIELD, border);
-        g.drawString(font, label, chipX + (chipW - font.width(label)) / 2, y + 8, bindingInfoKey ? Theme.TEXT : Theme.TEXT, false);
+        int border = listening ? Theme.accentWave(0) : hover ? Theme.SWITCH_OFF_HOVER : Theme.FIELD_BORDER;
+        UiRender.panel(g, chipX, y + 3, chipW, 18, 4, listening ? Theme.ACCENT_SOFT : Theme.FIELD, border);
+        g.drawString(font, label, chipX + (chipW - font.width(label)) / 2, y + 8, Theme.TEXT, false);
         addHit(chipX, y + 3, chipW, 18, (a, b, c) -> {
-            bindingInfoKey = !bindingInfoKey;
+            binding = listening ? null : key;
             setFocused(null);
         });
-        tooltip(g, mx, my, chipX, y + 3, chipW, 18, bindingInfoKey
-                ? "Gewünschte Taste drücken · Esc: abbrechen · Entf: Standard (linkes Alt)"
+        tooltip(g, mx, my, chipX, y + 3, chipW, 18, listening
+                ? "Gewünschte Taste drücken · Esc: abbrechen · Entf: Standard (" + defaultName + ")"
                 : "Klicken und neue Taste drücken (auch Maus-Seitentasten)");
         // Auf Standard zurücksetzen
         boolean resetHover = hovered(mx, my, x + w - 24, y + 3, 18, 18);
@@ -174,10 +175,10 @@ public final class BlueprintScreen extends ClientScreen {
                 : resetHover ? Theme.ACCENT_2 : Theme.TEXT_DIM, false);
         addHit(x + w - 24, y + 3, 18, 18, (a, b, c) -> {
             KeyBindings.reset(key);
-            bindingInfoKey = false;
-            announceInfoKey(key);
+            binding = null;
+            announceKey(key);
         });
-        if (resetHover) g.setTooltipForNextFrame(font, Component.literal("Standard: linkes Alt"), mx, my);
+        if (resetHover) g.setTooltipForNextFrame(font, Component.literal("Standard: " + defaultName), mx, my);
         y += 28;
         List<String> conflicts = KeyBindings.conflicts(key);
         if (!conflicts.isEmpty()) {
@@ -187,20 +188,22 @@ public final class BlueprintScreen extends ClientScreen {
         return y;
     }
 
-    private void announceInfoKey(KeyMapping key) {
+    private void announceKey(KeyMapping key) {
+        String title = Component.translatable(key.getName()).getString();
         List<String> conflicts = KeyBindings.conflicts(key);
-        if (conflicts.isEmpty()) Notifications.success("Block-Info-Taste", KeyBindings.keyName(key));
-        else Notifications.warning("Block-Info-Taste: " + KeyBindings.keyName(key), "Auch belegt für " + String.join(", ", conflicts));
+        if (conflicts.isEmpty()) Notifications.success(title, KeyBindings.keyName(key));
+        else Notifications.warning(title + ": " + KeyBindings.keyName(key), "Auch belegt für " + String.join(", ", conflicts));
     }
 
     @Override
     public boolean keyPressed(int keyCode, int scanCode, int modifiers) {
-        if (bindingInfoKey && ClientKeybinds.BLUEPRINT_INFO != null) {
-            bindingInfoKey = false;
+        if (binding != null) {
+            KeyMapping key = binding;
+            binding = null;
             if (keyCode == GLFW.GLFW_KEY_ESCAPE) return true;
-            if (keyCode == GLFW.GLFW_KEY_DELETE || keyCode == GLFW.GLFW_KEY_BACKSPACE) KeyBindings.reset(ClientKeybinds.BLUEPRINT_INFO);
-            else KeyBindings.bindKeyboard(ClientKeybinds.BLUEPRINT_INFO, keyCode, scanCode);
-            announceInfoKey(ClientKeybinds.BLUEPRINT_INFO);
+            if (keyCode == GLFW.GLFW_KEY_DELETE || keyCode == GLFW.GLFW_KEY_BACKSPACE) KeyBindings.reset(key);
+            else KeyBindings.bindKeyboard(key, keyCode, scanCode);
+            announceKey(key);
             return true;
         }
         return super.keyPressed(keyCode, scanCode, modifiers);
@@ -209,16 +212,17 @@ public final class BlueprintScreen extends ClientScreen {
     @Override
     public boolean mouseClicked(double mouseX, double mouseY, int button) {
         // Maus-Seitentasten und Mausrad-Klick lassen sich belegen; Links-/Rechtsklick bricht ab.
-        if (bindingInfoKey && button >= GLFW.GLFW_MOUSE_BUTTON_MIDDLE && ClientKeybinds.BLUEPRINT_INFO != null) {
-            bindingInfoKey = false;
-            KeyBindings.bindMouse(ClientKeybinds.BLUEPRINT_INFO, button);
-            announceInfoKey(ClientKeybinds.BLUEPRINT_INFO);
+        if (binding != null && button >= GLFW.GLFW_MOUSE_BUTTON_MIDDLE) {
+            KeyMapping key = binding;
+            binding = null;
+            KeyBindings.bindMouse(key, button);
+            announceKey(key);
             return true;
         }
-        boolean wasBinding = bindingInfoKey;
+        KeyMapping before = binding;
         boolean handled = super.mouseClicked(mouseX, mouseY, button);
         // Klick daneben beendet das Warten auf eine Taste.
-        if (wasBinding && bindingInfoKey && !handled) bindingInfoKey = false;
+        if (before != null && binding == before && !handled) binding = null;
         return handled;
     }
 
@@ -428,7 +432,16 @@ public final class BlueprintScreen extends ClientScreen {
         tooltip(g, mx, my, x + half + 4, y, w - half - 4, 20, "Mausrad-Klick auf einen noch nicht gebauten Block nimmt das Item aus deinem Inventar "
                 + "in die Hand. Es wird nichts erzeugt. Ist ein echter Block näher, gilt der normale Mittelklick.");
         y += 24;
-        y = renderInfoKey(g, mx, my, x, y, w) + 6;
+        y = renderKey(g, mx, my, x, y, w, ClientKeybinds.BLUEPRINT_INFO, "Block-Info-Taste", "linkes Alt");
+        y = renderKey(g, mx, my, x, y, w, ClientKeybinds.BLUEPRINT_ACCEPT, "Abweichung übernehmen", "N");
+        y += paragraph(g, "Abweichung übernehmen: auf einen falsch gesetzten Block (rot/gelb) zielen und die Taste drücken – "
+                + "die Stelle zählt dann als richtig, z.B. für gewollte Varianten. Nochmal drücken nimmt es zurück.", x, y, w, Theme.TEXT_MUTED) + 4;
+        int acceptedCount = plan.acceptedCount();
+        if (acceptedCount > 0) {
+            button(g, mx, my, x, y, w, 20, "Übernommene Abweichungen zurücksetzen (" + acceptedCount + ")", Style.SECONDARY, feature::clearAccepted);
+            y += 24;
+        }
+        y += 6;
         y += paragraph(g, "Markierungen: Rot = falscher Block · Gelb = Zustand/Ausrichtung · Violett = unbekannt"
                 + " · Blau = fehlt (nur bei „Alles“)", x, y, w, Theme.TEXT_DIM) + 6;
         y += paragraph(g, "Blockmodelle mit echten Texturen. Truhen, Betten, Schilder, Köpfe und Flüssigkeiten erscheinen als farbiger Körper. Luftbereiche werden nicht geprüft.", x, y, w, Theme.TEXT_MUTED) + 6;
@@ -484,7 +497,8 @@ public final class BlueprintScreen extends ClientScreen {
                 + " · Fehlt " + plan.count(BlueprintPlan.Status.MISSING)
                 + " · Abweichend " + (plan.count(BlueprintPlan.Status.WRONG_BLOCK) + plan.count(BlueprintPlan.Status.WRONG_STATE))
                 + " · Ungeprüft " + plan.count(BlueprintPlan.Status.UNCHECKED)
-                + " · Unbekannt " + plan.count(BlueprintPlan.Status.UNSUPPORTED);
+                + " · Unbekannt " + plan.count(BlueprintPlan.Status.UNSUPPORTED)
+                + (plan.acceptedCount() > 0 ? " · Übernommen " + plan.acceptedCount() : "");
     }
 
     private int paragraph(GuiGraphics g, String text, int x, int y, int width, int color) {

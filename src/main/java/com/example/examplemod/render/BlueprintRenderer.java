@@ -83,7 +83,7 @@ public final class BlueprintRenderer {
                 BlockPos pos = plan.position(cell);
                 double d = Vec3.atCenterOf(pos).distanceToSqr(context.cameraPos());
                 if (d > (double) distance * distance || !level.hasChunk(pos.getX() >> 4, pos.getZ() >> 4)) continue;
-                if (plan.onlyMissing && plan.compare(level, cell, pos) == BlueprintPlan.Status.CORRECT) continue;
+                if (plan.onlyMissing && plan.compare(level, i, pos) == BlueprintPlan.Status.CORRECT) continue;
                 nearby.add(new Candidate(i, pos, d));
             }
             nearby.sort(Comparator.comparingDouble(Candidate::distance));
@@ -104,8 +104,10 @@ public final class BlueprintRenderer {
         List<Candidate> fills = new ArrayList<>();
         for (Candidate candidate : candidates) {
             Blueprint.Cell cell = plan.blueprint.cells().get(candidate.index);
-            BlueprintPlan.Status status = plan.compare(level, cell, candidate.pos);
+            BlueprintPlan.Status status = plan.compare(level, candidate.index, candidate.pos);
             if (status == BlueprintPlan.Status.UNCHECKED || (plan.onlyMissing && status == BlueprintPlan.Status.CORRECT)) continue;
+            // Übernommene Abweichung: dort steht die gewollte Variante, keine Vorschau darüber zeichnen.
+            if (status == BlueprintPlan.Status.CORRECT && plan.accepted(candidate.index)) continue;
             BlockState state = plan.state(cell);
             boolean model = state != null && state.getRenderShape() == RenderShape.MODEL && !failedModels.contains(state);
             // A real wrong block occludes the ghost; its outline remains visible at the block surface.
@@ -155,7 +157,7 @@ public final class BlueprintRenderer {
         for (Candidate marker : markers) {
             Blueprint.Cell cell = plan.blueprint.cells().get(marker.index);
             BlockState state = plan.state(cell);
-            BlueprintPlan.Status status = plan.compare(level, cell, marker.pos);
+            BlueprintPlan.Status status = plan.compare(level, marker.index, marker.pos);
             int color = status.color;
             List<AABB> boxes = List.of(new AABB(0, 0, 0, 1, 1, 1));
             if (state != null && status != BlueprintPlan.Status.WRONG_BLOCK && status != BlueprintPlan.Status.WRONG_STATE) {

@@ -9,6 +9,7 @@
   "key.examplemod.blueprint_layer_up": "Bauplan: Ebene höher",
   "key.examplemod.blueprint_layer_down": "Bauplan: Ebene tiefer",
   "key.examplemod.blueprint_info": "Bauplan: Block-Info zeigen",
+  "key.examplemod.blueprint_accept": "Bauplan: Abweichung übernehmen",
   "key.examplemod.chest_search": "Kisten durchsuchen",
   "itemGroup.examplemod": "Lumen"
 }

@@ -56,6 +56,9 @@ public final class BlueprintPlan {
     private final Long2IntOpenHashMap index = new Long2IntOpenHashMap();
     private final Long2ObjectOpenHashMap<IntArrayList> sections = new Long2ObjectOpenHashMap<>();
     private final byte[] status;
+    /** Vom Spieler übernommene Abweichungen (Zellindex): jeder echte Block zählt dort als richtig. */
+    private final java.util.BitSet accepted = new java.util.BitSet();
+    private int acceptedVersion;
     private final int[] counts = new int[Status.values().length];
     private BlockPos origin;
     private int turns;
@@ -221,16 +224,52 @@ public final class BlueprintPlan {
         return result;
     }
 
-    public Status compare(ClientLevel level, Blueprint.Cell cell, BlockPos pos) {
-        if (unsupported[cell.state()]) return Status.UNSUPPORTED;
+    public Status compare(ClientLevel level, int cellIndex, BlockPos pos) {
+        Blueprint.Cell cell = blueprint.cells().get(cellIndex);
+        boolean accept = accepted.get(cellIndex);
+        if (unsupported[cell.state()] && !accept) return Status.UNSUPPORTED;
         if (pos.getY() < level.getMinY() || pos.getY() > level.getMaxY() || !level.hasChunk(pos.getX() >> 4, pos.getZ() >> 4))
             return Status.UNCHECKED;
-        BlockState actual = level.getBlockState(pos), expected = state(cell);
+        BlockState actual = level.getBlockState(pos);
+        // Luft, Gras, Schnee oder Wasser im Bauraum: der Block fehlt noch, es steht nichts Falsches im Weg.
+        boolean empty = actual.isAir() || actual.canBeReplaced();
+        // Übernommene Abweichung: jeder echte Block ist hier richtig; wird er abgebaut, fehlt er wieder.
+        if (accept) return empty ? Status.MISSING : Status.CORRECT;
+        BlockState expected = state(cell);
         if (actual == expected) return Status.CORRECT;
         if (actual.getBlock() == expected.getBlock()) return matches(actual, expected) ? Status.CORRECT : Status.WRONG_STATE;
-        // Luft, Gras, Schnee oder Wasser im Bauraum: der Block fehlt noch, es steht nichts Falsches im Weg.
-        if (actual.isAir() || actual.canBeReplaced()) return Status.MISSING;
+        if (empty) return Status.MISSING;
         return Status.WRONG_BLOCK;
+    }
+
+    // ---- Übernommene Abweichungen (gewollte Varianten) ----
+
+    public boolean accepted(int cellIndex) { return accepted.get(cellIndex); }
+    public int acceptedCount() { return accepted.cardinality(); }
+    /** Steigt bei jeder Änderung; für das Speichern pro Welt. */
+    public int acceptedVersion() { return acceptedVersion; }
+    public int[] acceptedCells() { return accepted.stream().toArray(); }
+
+    /** Abweichung übernehmen oder zurücknehmen; der Status der Zelle wird sofort neu berechnet. */
+    public void setAccepted(ClientLevel level, int cellIndex, boolean value) {
+        if (cellIndex < 0 || cellIndex >= status.length || accepted.get(cellIndex) == value) return;
+        accepted.set(cellIndex, value);
+        acceptedVersion++;
+        if (level != null && inDimension(level)) update(level, cellIndex);
+    }
+
+    /** Beim Wiederherstellen; ungültige Einträge (z.B. geänderte Datei) werden ignoriert. */
+    public void restoreAccepted(int[] cells) {
+        for (int cell : cells) if (cell >= 0 && cell < status.length) accepted.set(cell);
+        acceptedVersion++;
+        resetComparison();
+    }
+
+    public void clearAccepted() {
+        if (accepted.isEmpty()) return;
+        accepted.clear();
+        acceptedVersion++;
+        resetComparison();
     }
 
     /**
@@ -258,14 +297,18 @@ public final class BlueprintPlan {
         for (int n = 0; n < budget; n++) {
             int i = cursor++;
             if (cursor == status.length) cursor = 0;
-            Blueprint.Cell cell = blueprint.cells().get(i);
-            int next = compare(level, cell, position(cell)).ordinal(), previous = status[i];
-            if (next == previous) continue;
-            counts[previous]--; counts[next]++;
-            Material material = materialByState[cell.state()];
-            if (previous == Status.CORRECT.ordinal()) material.correct -= units[cell.state()];
-            if (next == Status.CORRECT.ordinal()) material.correct += units[cell.state()];
-            status[i] = (byte) next;
+            update(level, i);
         }
+    }
+
+    private void update(ClientLevel level, int i) {
+        Blueprint.Cell cell = blueprint.cells().get(i);
+        int next = compare(level, i, position(cell)).ordinal(), previous = status[i];
+        if (next == previous) return;
+        counts[previous]--; counts[next]++;
+        Material material = materialByState[cell.state()];
+        if (previous == Status.CORRECT.ordinal()) material.correct -= units[cell.state()];
+        if (next == Status.CORRECT.ordinal()) material.correct += units[cell.state()];
+        status[i] = (byte) next;
     }
 }

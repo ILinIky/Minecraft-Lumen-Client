@@ -9,6 +9,7 @@
   "key.examplemod.blueprint_layer_up": "Blueprint: layer up",
   "key.examplemod.blueprint_layer_down": "Blueprint: layer down",
   "key.examplemod.blueprint_info": "Blueprint: show block info",
+  "key.examplemod.blueprint_accept": "Blueprint: accept deviation",
   "key.examplemod.chest_search": "Search chests",
   "itemGroup.examplemod": "Lumen"
 }

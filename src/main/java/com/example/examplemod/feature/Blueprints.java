@@ -81,7 +81,7 @@ public final class Blueprints extends Module {
 
     /** Platzierung, die beim Wiederherstellen statt "vor dem Spieler" übernommen wird. */
     private record Placement(BlockPos origin, String dimension, int turns, boolean mirrored,
-                             BlueprintPlan.Layers layers, int layer, boolean onlyMissing, boolean visible) {}
+                             BlueprintPlan.Layers layers, int layer, boolean onlyMissing, boolean visible, int[] accepted) {}
 
     public Blueprints() {
         super("blueprints", "Baupläne", "Transparente Blockvorschau, Ebenen und Materialbedarf", Category.WORLD);
@@ -139,6 +139,7 @@ public final class Blueprints extends Module {
                             loaded.layers = placement.layers();
                             loaded.layer = Math.max(0, Math.min(data.sizeY() - 1, placement.layer()));
                             loaded.onlyMissing = placement.onlyMissing();
+                            loaded.restoreAccepted(placement.accepted());
                         }
                         plan = loaded;
                         file = path;
@@ -381,7 +382,7 @@ public final class Blueprints extends Module {
         if (plan == null || file == null) return null;
         BlockPos o = plan.origin();
         return file + "|" + o.getX() + "," + o.getY() + "," + o.getZ() + "|" + plan.turns() + plan.mirrored()
-                + "|" + plan.layers + plan.layer + plan.onlyMissing + isEnabled();
+                + "|" + plan.layers + plan.layer + plan.onlyMissing + isEnabled() + "|" + plan.acceptedVersion();
     }
 
     public void saveState() {
@@ -401,6 +402,9 @@ public final class Blueprints extends Module {
         json.addProperty("layer", plan.layer);
         json.addProperty("onlyMissing", plan.onlyMissing);
         json.addProperty("visible", isEnabled());
+        com.google.gson.JsonArray accepted = new com.google.gson.JsonArray();
+        for (int cell : plan.acceptedCells()) accepted.add(cell);
+        json.add("accepted", accepted);
         ClientConfig.writeAtomically(target, json.toString());
         savedSignature = signature;
     }
@@ -428,10 +432,17 @@ public final class Blueprints extends Module {
                 return;
             }
             BlueprintPlan.Layers layers = BlueprintPlan.Layers.valueOf(json.get("layers").getAsString());
+            int[] accepted = new int[0];
+            if (json.has("accepted")) {
+                var array = json.getAsJsonArray("accepted");
+                accepted = new int[array.size()];
+                for (int i = 0; i < accepted.length; i++) accepted[i] = array.get(i).getAsInt();
+            }
             Placement placement = new Placement(
                     new BlockPos(json.get("x").getAsInt(), json.get("y").getAsInt(), json.get("z").getAsInt()),
                     json.get("dimension").getAsString(), json.get("turns").getAsInt(), json.get("mirrored").getAsBoolean(),
-                    layers, json.get("layer").getAsInt(), json.get("onlyMissing").getAsBoolean(), json.get("visible").getAsBoolean());
+                    layers, json.get("layer").getAsInt(), json.get("onlyMissing").getAsBoolean(), json.get("visible").getAsBoolean(),
+                    accepted);
             load(path, placement);
         } catch (IOException | RuntimeException failure) {
             ExampleMod.LOGGER.warn("Bauplan-Zustand ist ungültig: {}", target, failure);
@@ -546,7 +557,7 @@ public final class Blueprints extends Module {
             pos.set(x, y, z);
             int index = plan.cellAt(pos);
             if (index >= 0) {
-                BlueprintPlan.Status status = plan.compare(mc.level, plan.blueprint.cells().get(index), pos);
+                BlueprintPlan.Status status = plan.compare(mc.level, index, pos);
                 if (status != BlueprintPlan.Status.CORRECT && status != BlueprintPlan.Status.UNCHECKED) {
                     return new Hover(index, pos.immutable(), status);
                 }
@@ -556,6 +567,60 @@ public final class Blueprints extends Module {
             else { z += stepZ; t = maxZ; maxZ += deltaZ; }
         }
         return null;
+    }
+
+    // ---- Abweichung übernehmen: gewollte Variante statt Fehler ----
+
+    /**
+     * Taste "Abweichung übernehmen" (aus ClientEvents): Zielt der Spieler auf einen falsch gesetzten Block,
+     * zählt diese Stelle ab jetzt als richtig. Auf einer schon übernommenen Stelle wird es zurückgenommen.
+     */
+    public void onAcceptKey() {
+        if (plan == null || mc.player == null || mc.level == null) {
+            Notifications.info("Bauplan", "Kein Bauplan geladen");
+            return;
+        }
+        if (!plan.inDimension(mc.level)) return;
+        Vec3 from = mc.player.getEyePosition();
+        Vec3 to = from.add(mc.player.getViewVector(1F).scale(Math.min(HOVER_DISTANCE, range.get())));
+        BlockHitResult hit = mc.level.clip(new ClipContext(from, to, ClipContext.Block.OUTLINE, ClipContext.Fluid.NONE, mc.player));
+        int index = hit.getType() == HitResult.Type.BLOCK ? plan.cellAt(hit.getBlockPos()) : -1;
+        if (index < 0) {
+            Notifications.info("Abweichung übernehmen", "Zuerst einen falsch gesetzten Bauplan-Block anvisieren");
+            return;
+        }
+        BlockPos pos = hit.getBlockPos();
+        String actual = mc.level.getBlockState(pos).getBlock().getName().getString();
+        if (plan.accepted(index)) {
+            plan.setAccepted(mc.level, index, false);
+            Notifications.info("Abweichung zurückgenommen", actual + " wird wieder geprüft");
+            return;
+        }
+        BlueprintPlan.Status status = plan.compare(mc.level, index, pos);
+        switch (status) {
+            case WRONG_BLOCK, WRONG_STATE, UNSUPPORTED -> {
+                plan.setAccepted(mc.level, index, true);
+                BlockState expected = plan.state(plan.blueprint.cells().get(index));
+                String text = status == BlueprintPlan.Status.WRONG_STATE || expected == null
+                        ? actual + " so übernommen" : actual + " statt " + expected.getBlock().getName().getString();
+                Notifications.success("Abweichung übernommen", text);
+            }
+            case CORRECT -> Notifications.info("Abweichung übernehmen", "Dieser Block ist schon richtig");
+            default -> Notifications.info("Abweichung übernehmen", "Hier steht noch kein Block");
+        }
+    }
+
+    /** Alle übernommenen Abweichungen verwerfen; die Stellen werden wieder normal geprüft. */
+    public void clearAccepted() {
+        if (plan == null) return;
+        int count = plan.acceptedCount();
+        plan.clearAccepted();
+        if (count > 0) Notifications.info("Bauplan", count + " Abweichungen zurückgesetzt");
+    }
+
+    /** Für das Bauplan-Fenster, z.B. "N". */
+    public String acceptKeyName() {
+        return ClientKeybinds.BLUEPRINT_ACCEPT == null ? "-" : ClientKeybinds.BLUEPRINT_ACCEPT.getTranslatedKeyMessage().getString();
     }
 
     // ---- Mittelklick: Item des anvisierten Bauplan-Blocks in die Hand nehmen ----
