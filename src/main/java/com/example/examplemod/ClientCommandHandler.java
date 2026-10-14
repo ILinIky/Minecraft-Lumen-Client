@@ -38,6 +38,26 @@ public class ClientCommandHandler {
     public static void registerCommands(RegisterClientCommandsEvent event) {
         CommandDispatcher<CommandSourceStack> dispatcher = event.getDispatcher();
 
+        dispatcher.register(Commands.literal("leistung").executes(context -> {
+            Minecraft mc = Minecraft.getInstance();
+            mc.schedule(() -> mc.setScreen(new com.example.examplemod.gui.PerformanceScreen(null)));
+            return 1;
+        }).then(Commands.literal("aufnahme").executes(context -> {
+            com.example.examplemod.performance.PerformanceCapture.start(); return 1;
+        })).then(Commands.literal("export").executes(context -> {
+            com.example.examplemod.performance.PerformanceCapture.stopAndExport(); return 1;
+        })));
+
+        dispatcher.register(Commands.literal("farm").executes(context -> {
+            Minecraft mc = Minecraft.getInstance();
+            mc.schedule(() -> mc.setScreen(new com.example.examplemod.gui.FarmScreen(null)));
+            return 1;
+        }).then(Commands.literal("ecke1").executes(c -> { ModuleManager.FARM_TRACKER.corner(1); return 1; }))
+          .then(Commands.literal("ecke2").executes(c -> { ModuleManager.FARM_TRACKER.corner(2); return 1; }))
+          .then(Commands.literal("abbrechen").executes(c -> { ModuleManager.FARM_TRACKER.clearSelection(); return 1; }))
+          .then(Commands.literal("speichern").then(Commands.argument("name", StringArgumentType.greedyString())
+                  .executes(c -> ModuleManager.FARM_TRACKER.saveSelection(StringArgumentType.getString(c, "name")) ? 1 : 0))));
+
         dispatcher.register(Commands.literal("sammelliste").executes(context -> {
             Minecraft mc = Minecraft.getInstance();
             mc.schedule(() -> mc.setScreen(new com.example.examplemod.gui.MaterialListScreen(null)));

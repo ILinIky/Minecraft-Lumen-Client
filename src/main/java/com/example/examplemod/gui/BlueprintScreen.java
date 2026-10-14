@@ -48,6 +48,8 @@ public final class BlueprintScreen extends ClientScreen {
     private List<Path> files = List.of();
     private Tab tab;
     private BlueprintPlan seenPlan;
+    private BlueprintPlan resetPlan;
+    private long resetUntil;
     private EditBox search;
     private String query = "", fileError;
     /** Reiter "Aufnehmen": Name und Format des neuen Bauplans (bleiben beim Wechseln erhalten). */
@@ -475,6 +477,40 @@ public final class BlueprintScreen extends ClientScreen {
             y += 24;
         }
         y += paragraph(g, "Im Spiel: Bild auf / Bild ab wechselt die Ebene (startet auf deiner Höhe).", x, y, w, Theme.TEXT_MUTED) + 6;
+        button(g, mx, my, x, y, w, 20, "Automatischer Ebenenwechsel: " + (feature.autoLayer.get() ? "An" : "Aus"),
+                feature.autoLayer.get() ? Style.PRIMARY : Style.SECONDARY, () -> {
+                    feature.autoLayer.toggle();
+                    plan.resetLayerProgress();
+                    if (feature.autoLayer.get()) { plan.layers = BlueprintPlan.Layers.SINGLE; feature.focusItem(null); }
+                });
+        y += 26;
+        if (plan.layers != BlueprintPlan.Layers.ALL) {
+            var progress = plan.layerProgress();
+            String progressText = "Ebene " + (plan.layer + 1) + "/" + data.sizeY() + " – " + progress.percent() + " %"
+                    + (!progress.checked() ? " · wird geprüft" : progress.unknown() > 0 ? " · ungeprüfte Blöcke" : "");
+            g.drawString(font, UiRender.ellipsize(font, progressText, w), x, y, Theme.TEXT_DIM, false);
+            UiRender.roundRect(g, x, y + 13, w, 4, 2, Theme.CARD);
+            if (progress.percent() > 0) UiRender.gradientH(g, x, y + 13, w * progress.percent() / 100, 4, Theme.ACCENT, Theme.ACCENT_2);
+            y += 24;
+        }
+        y += paragraph(g, "Automatik gilt für die gewählte Ebene. Bei Alle Ebenen oder Materialfokus pausiert sie.", x, y, w, Theme.TEXT_MUTED) + 4;
+        button(g, mx, my, x, y, w, 22, "Lazy-Bauen: " + (feature.lazyBuild.get() ? "An" : "Aus"),
+                feature.lazyBuild.get() ? Style.PRIMARY : Style.SECONDARY, () -> {
+                    feature.lazyBuild.toggle(); feature.lazyBuilder.cancel();
+                    if (feature.lazyBuild.get()) { plan.layers = BlueprintPlan.Layers.SINGLE; feature.focusItem(null); }
+                });
+        y += 27;
+        if (feature.lazyBuild.get()) {
+            button(g, mx, my, x, y, half, 20, feature.lazyMode.get(), Style.SECONDARY, () -> feature.lazyMode.cycle(1));
+            button(g, mx, my, x + half + 4, y, w - half - 4, 20, "Tempo: " + feature.lazyTempo.get(), Style.SECONDARY, () -> feature.lazyTempo.cycle(1));
+            y += 25;
+            y = renderKey(g, mx, my, x, y, w, ClientKeybinds.BLUEPRINT_BUILD, "Lazy-Bauen umschalten", "G");
+            y += paragraph(g, "Einmal drücken: Bauen an. Erneut drücken: aus. Manuelles Bauen hat Vorrang; danach geht es automatisch weiter. "
+                    + "Volle Baublöcke, Stämme, einfache Stufen und Treppen; Ausrichtung muss passen. Nach einem Ebenenwechsel erneut drücken.", x, y, w, Theme.TEXT_DIM) + 4;
+            y += paragraph(g, "Normale Minecraft-Reichweite. Der Block am Fadenkreuz wird bevorzugt; auch erreichbare Kanten und Stufenflächen werden geprüft.", x, y, w, Theme.TEXT_DIM) + 4;
+            y += paragraph(g, "Kein Abbau. Keine Platzierung durch Wände. Bei fehlendem Material, Ablehnung oder Zeitüberschreitung: "
+                    + "stoppen und Taste erneut drücken. Ein freier Hotbar-Platz ermöglicht das Nachladen aus dem Inventar.", x, y, w, Theme.TEXT_MUTED) + 6;
+        }
         button(g, mx, my, x, y, half, 20, plan.onlyMissing ? "Nur offene Blöcke" : "Gesamter Bauplan", Style.SECONDARY,
                 () -> plan.onlyMissing = !plan.onlyMissing);
         button(g, mx, my, x + half + 4, y, w - half - 4, 20, "Deckkraft: " + feature.opacity.getInt() + "%", Style.SECONDARY,
@@ -502,6 +538,20 @@ public final class BlueprintScreen extends ClientScreen {
         y += 24;
         y = renderKey(g, mx, my, x, y, w, ClientKeybinds.BLUEPRINT_INFO, "Block-Info-Taste", "linkes Alt");
         y = renderKey(g, mx, my, x, y, w, ClientKeybinds.BLUEPRINT_ACCEPT, "Abweichung übernehmen", "N");
+        y = renderKey(g, mx, my, x, y, w, ClientKeybinds.BLUEPRINT_HIDE, "Block als erledigt ausblenden", "H");
+        y += paragraph(g, "Block anvisieren und Taste drücken: aus der Vorschau entfernen und als erledigt zählen, auch ohne echten Block. "
+                + "Die Taste kann auch auf eine Maus-Seitentaste gelegt werden. Änderungen bleiben je Bauplandatei und Welt gespeichert.", x, y, w, Theme.TEXT_DIM) + 4;
+        if (feature.canUndoHidden()) {
+            button(g, mx, my, x, y, w, 20, "Letztes Ausblenden rückgängig", Style.SECONDARY, feature::undoHidden);
+            y += 24;
+        }
+        boolean resetConfirm = resetPlan == plan && System.currentTimeMillis() < resetUntil;
+        button(g, mx, my, x, y, w, 20, resetConfirm ? "Original wirklich wiederherstellen?" : "Originalblöcke wiederherstellen (" + plan.ignoredCount() + " ausgeblendet)", Style.SECONDARY, () -> {
+            if (resetPlan == plan && System.currentTimeMillis() < resetUntil) { feature.restoreOriginal(); resetPlan = null; }
+            else { resetPlan = plan; resetUntil = System.currentTimeMillis() + 4000; }
+        });
+        y += 24;
+        y += paragraph(g, "Original wiederherstellen setzt Ausblendungen, Abweichungen und Materialtausch zurück. Position, Drehung und Ebene bleiben erhalten.", x, y, w, Theme.TEXT_MUTED) + 4;
         y += paragraph(g, "Abweichung übernehmen: auf einen falsch gesetzten Block (rot/gelb) zielen und die Taste drücken – "
                 + "die Stelle zählt dann als richtig, z.B. für gewollte Varianten. Nochmal drücken nimmt es zurück.", x, y, w, Theme.TEXT_MUTED) + 4;
         int acceptedCount = plan.acceptedCount();

@@ -39,6 +39,17 @@ import org.lwjgl.glfw.GLFW;
 
 @Mod.EventBusSubscriber(modid = ExampleMod.MODID, value = Dist.CLIENT)
 public class ClientEvents {
+    private static final com.example.examplemod.performance.PerformanceMonitor.Metric AFTER_TICK =
+            com.example.examplemod.performance.PerformanceMonitor.INSTANCE.metric("Client-Nachlauf / Speicher",
+                    com.example.examplemod.performance.PerformanceMonitor.Phase.OTHER);
+
+    @SubscribeEvent
+    public static void onPerformanceFrame(TickEvent.RenderTickEvent.Pre event) {
+        Minecraft mc = Minecraft.getInstance();
+        com.example.examplemod.performance.PerformanceMonitor.INSTANCE.frame(mc.level != null && mc.player != null);
+        com.example.examplemod.performance.PerformanceCapture.onFrame();
+    }
+
 
     /** Vor Minecrafts eigener Tastenverarbeitung: Mittelklick auf einen Bauplan-Block abfangen. */
     @SubscribeEvent
@@ -80,16 +91,23 @@ public class ClientEvents {
         while (ClientKeybinds.BLUEPRINT_ACCEPT.consumeClick()) {
             if (mc.player != null && mc.screen == null) ModuleManager.BLUEPRINTS.onAcceptKey();
         }
+        boolean hideBlueprintBlock = false;
+        while (ClientKeybinds.BLUEPRINT_HIDE.consumeClick()) hideBlueprintBlock = true;
+        if (hideBlueprintBlock && mc.player != null && mc.screen == null) ModuleManager.BLUEPRINTS.onHideKey();
         while (ClientKeybinds.BLUEPRINT_INFO.consumeClick()) {
             if (mc.player != null && mc.screen == null) ModuleManager.BLUEPRINTS.onInfoKey();
         }
 
         if (mc.player != null && mc.level != null) {
             ModuleManager.onTick();
-            Fullbright.update();
-            checkDeath(mc);
-            Navigation.onClientTick(mc);
-            ChestStore.tick();
+            long measuredStart = AFTER_TICK.begin();
+            try {
+                Fullbright.update();
+                checkDeath(mc);
+                Navigation.onClientTick(mc);
+                ChestStore.tick();
+                com.example.examplemod.farm.FarmStore.tick();
+            } finally { AFTER_TICK.end(measuredStart); }
         } else {
             wasDead = false;
         }
@@ -212,9 +230,20 @@ public class ClientEvents {
     @SubscribeEvent
     public static void onLogin(ClientPlayerNetworkEvent.LoggingIn event) {
         TeleportService.reset();
+        com.example.examplemod.performance.PerformanceMonitor.INSTANCE.reset();
         WaypointStore.onJoin();
         ChestStore.onJoin();
+        com.example.examplemod.farm.FarmStore.onJoin();
         if (ModuleManager.BLUEPRINTS != null) ModuleManager.BLUEPRINTS.restore();
+    }
+
+    @SubscribeEvent
+    public static void onChunkUnload(net.minecraftforge.event.level.ChunkEvent.Unload event) {
+        if (event.getLevel() != Minecraft.getInstance().level || !ModuleManager.isReady()) return;
+        var pos = event.getChunk().getPos();
+        ModuleManager.FARM_TRACKER.onChunkUnload(pos.x, pos.z);
+        var plan = ModuleManager.BLUEPRINTS.plan();
+        if (plan != null) plan.resetLayerProgress();
     }
 
     @SubscribeEvent
@@ -222,6 +251,7 @@ public class ClientEvents {
         TeleportService.reset();
         ModuleManager.onLeaveWorld();
         ChestStore.onLeave();
+        com.example.examplemod.farm.FarmStore.onLeave();
         WaypointStore.onLeave();
     }
 }

@@ -1,5 +1,7 @@
 {
+  "key.examplemod.blueprint_hide": "Blueprint: hide block as completed",
   "key.categories.examplemod": "Lumen Client",
+  "key.examplemod.blueprint_build": "Blueprint: Lazy build (toggle)",
   "key.examplemod.menu": "Open client menu",
   "key.examplemod.waypoints": "Open waypoints",
   "key.examplemod.save_waypoint": "Save waypoint",

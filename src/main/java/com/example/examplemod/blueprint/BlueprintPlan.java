@@ -55,10 +55,21 @@ public final class BlueprintPlan {
     private final int[] units;
     private final Long2IntOpenHashMap index;
     private final Long2ObjectOpenHashMap<IntArrayList> sections;
+    private final IntArrayList[] layerCells;
+    private final int[] correctByLayer;
+    private final LayerProgress.Delay layerDelay = new LayerProgress.Delay();
+    private LayerProgress layerProgress = new LayerProgress(0, 0, 0, false);
+    private int scannedLayer = -1, layerCursor, layerCorrect, layerUnknown;
+    private Layers scannedMode;
+    private boolean scannedAuto;
+    private long scanTick;
+    private final java.util.Set<Long> layerChunks = new java.util.HashSet<>();
     private final int[] paletteCounts;
     private final byte[] status;
     /** Vom Spieler übernommene Abweichungen (Zellindex): jeder echte Block zählt dort als richtig. */
     private final java.util.BitSet accepted = new java.util.BitSet();
+    /** Explicitly removed from this working copy, including empty positions. */
+    private final java.util.BitSet ignored = new java.util.BitSet();
     private int acceptedVersion;
     private final int[] counts = new int[Status.values().length];
     private BlockPos origin;
@@ -121,18 +132,23 @@ public final class BlueprintPlan {
         if (unknown > 0) warnings.add(unknown + " unbekannte Blockzustände: violett markiert, nicht als korrekt gewertet.");
         if (previous != null) {
             index = previous.index; sections = previous.sections; paletteCounts = previous.paletteCounts;
+            layerCells = previous.layerCells;
         } else {
             index = new Long2IntOpenHashMap(); sections = new Long2ObjectOpenHashMap<>();
+            layerCells = new IntArrayList[blueprint.sizeY()];
+            for (int y = 0; y < layerCells.length; y++) layerCells[y] = new IntArrayList();
             paletteCounts = new int[paletteSize];
             index.defaultReturnValue(-1);
             for (int i = 0; i < blueprint.cells().size(); i++) {
                 Blueprint.Cell cell = blueprint.cells().get(i);
+                layerCells[cell.y()].add(i);
                 index.put(key(cell.x(), cell.y(), cell.z()), i);
                 sections.computeIfAbsent(key(cell.x() >> 4, cell.y() >> 4, cell.z() >> 4), k -> new IntArrayList()).add(i);
                 paletteCounts[cell.state()]++;
             }
         }
         for (int i = 0; i < paletteSize; i++) materialByState[i].total += paletteCounts[i] * units[i];
+        correctByLayer = new int[blueprint.sizeY()];
         materials = materialsById.values().stream().filter(m -> m.total > 0)
                 .sorted(Comparator.comparingInt((Material m) -> m.total).reversed().thenComparing(m -> m.name)).toList();
         status = new byte[blueprint.cells().size()];
@@ -214,9 +230,58 @@ public final class BlueprintPlan {
     private void resetComparison() {
         Arrays.fill(status, (byte) Status.UNCHECKED.ordinal());
         Arrays.fill(counts, 0);
+        Arrays.fill(correctByLayer, 0);
         counts[Status.UNCHECKED.ordinal()] = status.length;
         for (Material material : materials) material.correct = 0;
+        ignored.stream().forEach(i -> updateStatus(i, Status.CORRECT.ordinal()));
         cursor = 0;
+        resetLayerProgress();
+    }
+
+    public void resetLayerProgress() {
+        scannedLayer = -1;
+        layerDelay.reset();
+        layerProgress = new LayerProgress(0, 0, 0, false);
+    }
+
+    public LayerProgress layerProgress() {
+        return scannedLayer == layer && scannedMode == layers ? layerProgress
+                : new LayerProgress(layerCells[Math.max(0, Math.min(layerCells.length - 1, layer))].size(), 0, 0, false);
+    }
+
+    /** Priority comparison of the selected layer, sharing the existing status/material accounting. */
+    private void scanLayer(ClientLevel level, boolean auto) {
+        scanTick++;
+        if (layers == Layers.ALL || focus != null) { resetLayerProgress(); return; }
+        if (scannedLayer != layer || scannedMode != layers || scannedAuto != auto) {
+            scannedLayer = layer; scannedMode = layers; scannedAuto = auto;
+            layerCursor = layerCorrect = layerUnknown = 0;
+            layerChunks.clear(); layerDelay.reset();
+            layerProgress = new LayerProgress(layerCells[layer].size(), 0, 0, false);
+        }
+        IntArrayList cells = layerCells[layer];
+        int end = Math.min(cells.size(), layerCursor + 512);
+        while (layerCursor < end) {
+            int i = cells.getInt(layerCursor++);
+            BlockPos pos = position(blueprint.cells().get(i));
+            layerChunks.add(net.minecraft.world.level.ChunkPos.asLong(pos.getX() >> 4, pos.getZ() >> 4));
+            update(level, i);
+            if (status(i) == Status.CORRECT) layerCorrect++;
+            if (status(i) == Status.UNCHECKED || status(i) == Status.UNSUPPORTED) layerUnknown++;
+            if (status(i) != Status.CORRECT) layerDelay.reset();
+        }
+        if (layerCursor < cells.size()) return;
+        // A chunk may have unloaded since the beginning of a multi-tick pass.
+        boolean loaded = layerChunks.stream().allMatch(key -> level.hasChunk(
+                net.minecraft.world.level.ChunkPos.getX(key), net.minecraft.world.level.ChunkPos.getZ(key)));
+        layerProgress = loaded ? new LayerProgress(cells.size(), Math.min(layerCorrect, correctByLayer[layer]), layerUnknown, true)
+                : new LayerProgress(cells.size(), 0, cells.size(), true);
+        if (auto && layerDelay.ready(layerProgress, scanTick) && layer + 1 < layerCells.length) {
+            layer++;
+            resetLayerProgress();
+        } else if (!auto) layerDelay.reset();
+        layerCursor = layerCorrect = layerUnknown = 0;
+        layerChunks.clear();
     }
 
     public BlockPos position(Blueprint.Cell cell) {
@@ -226,6 +291,17 @@ public final class BlueprintPlan {
     public BlockState state(Blueprint.Cell cell) { return rotated[cell.state()]; }
     public Status status(int i) { return Status.values()[status[i]]; }
     public int count(Status value) { return counts[value.ordinal()]; }
+    /** Known missing material on the selected layer; reuses the existing comparison cache. */
+    public int missingOnLayer(Item item) {
+        if (layer < 0 || layer >= layerCells.length) return 0;
+        int amount = 0;
+        for (int i : layerCells[layer]) {
+            var cell = blueprint.cells().get(i);
+            if (!accepted(i) && status(i) == Status.MISSING && materialByState[cell.state()].item == item)
+                amount += units[cell.state()];
+        }
+        return amount;
+    }
     public boolean inDimension(ClientLevel level) { return level != null && level.dimension().location().toString().equals(dimension); }
     /** Mit gewähltem Material gelten alle Ebenen, damit jede Stelle dieses Materials zu sehen ist. */
     public boolean visibleLayer(int y) {
@@ -239,7 +315,7 @@ public final class BlueprintPlan {
         if (xz.x() < 0 || xz.x() >= blueprint.sizeX() || y < 0 || y >= blueprint.sizeY()
                 || xz.z() < 0 || xz.z() >= blueprint.sizeZ() || !visibleLayer(y)) return null;
         int cell = index.get(key(xz.x(), y, xz.z()));
-        return cell < 0 ? null : state(blueprint.cells().get(cell));
+        return cell < 0 || ignored.get(cell) ? null : state(blueprint.cells().get(cell));
     }
     /** Index der Bauplan-Zelle an dieser Weltposition (nur sichtbare Ebenen), sonst -1. */
     public int cellAt(BlockPos worldPos) {
@@ -272,6 +348,7 @@ public final class BlueprintPlan {
     }
 
     public Status compare(ClientLevel level, int cellIndex, BlockPos pos) {
+        if (ignored.get(cellIndex)) return Status.CORRECT;
         Blueprint.Cell cell = blueprint.cells().get(cellIndex);
         boolean accept = accepted.get(cellIndex);
         if (unsupported[cell.state()] && !accept) return Status.UNSUPPORTED;
@@ -296,12 +373,28 @@ public final class BlueprintPlan {
     /** Steigt bei jeder Änderung; für das Speichern pro Welt. */
     public int acceptedVersion() { return acceptedVersion; }
     public int[] acceptedCells() { return accepted.stream().toArray(); }
+    public boolean ignored(int index) { return ignored.get(index); }
+    public int ignoredCount() { return ignored.cardinality(); }
+    public int[] ignoredCells() { return ignored.stream().toArray(); }
+    public void setIgnored(ClientLevel level, int index, boolean value) {
+        if (index < 0 || index >= status.length || ignored.get(index) == value) return;
+        ignored.set(index, value); acceptedVersion++; resetLayerProgress();
+        if (value) updateStatus(index, Status.CORRECT.ordinal());
+        else if (level != null && inDimension(level)) update(level, index);
+        else updateStatus(index, Status.UNCHECKED.ordinal());
+    }
+    public void restoreIgnored(int[] cells) {
+        ignored.clear();
+        for (int cell : cells) if (cell >= 0 && cell < status.length) ignored.set(cell);
+        acceptedVersion++; resetComparison();
+    }
 
     /** Abweichung übernehmen oder zurücknehmen; der Status der Zelle wird sofort neu berechnet. */
     public void setAccepted(ClientLevel level, int cellIndex, boolean value) {
         if (cellIndex < 0 || cellIndex >= status.length || accepted.get(cellIndex) == value) return;
         accepted.set(cellIndex, value);
         acceptedVersion++;
+        resetLayerProgress();
         if (level != null && inDimension(level)) update(level, cellIndex);
     }
 
@@ -323,7 +416,8 @@ public final class BlueprintPlan {
      * Gleicher Block: nur bauliche Eigenschaften vergleichen. Zustände, die sich im Spiel von selbst
      * oder durch Benutzung ändern (Laub-Abstand, Strom, offen/zu, Wachstum), zählen nicht als Fehler.
      */
-    private static boolean matches(BlockState actual, BlockState expected) {
+    public static boolean matches(BlockState actual, BlockState expected) {
+        if (actual == null || expected == null || actual.getBlock() != expected.getBlock()) return false;
         for (Property<?> property : expected.getProperties()) {
             if (TRANSIENT.contains(property.getName())) continue;
             if (!actual.getValue(property).equals(expected.getValue(property))) return false;
@@ -338,9 +432,14 @@ public final class BlueprintPlan {
 
     /** Maximum 2000 lookups per tick; unloaded chunks are explicitly not counted as missing. */
     public void scan(ClientLevel level) {
-        if (!inDimension(level)) return;
+        scan(level, false);
+    }
+
+    public void scan(ClientLevel level, boolean autoLayer) {
+        if (!inDimension(level)) { resetLayerProgress(); return; }
         if (lastLevel != level) { lastLevel = level; resetComparison(); }
-        int budget = Math.min(2000, status.length);
+        scanLayer(level, autoLayer);
+        int budget = Math.min(1488, status.length);
         for (int n = 0; n < budget; n++) {
             int i = cursor++;
             if (cursor == status.length) cursor = 0;
@@ -349,9 +448,18 @@ public final class BlueprintPlan {
     }
 
     private void update(ClientLevel level, int i) {
+        updateStatus(i, compare(level, i, position(blueprint.cells().get(i))).ordinal());
+    }
+    private void updateStatus(int i, int next) {
         Blueprint.Cell cell = blueprint.cells().get(i);
-        int next = compare(level, i, position(cell)).ordinal(), previous = status[i];
+        int previous = status[i];
         if (next == previous) return;
+        if (previous == Status.CORRECT.ordinal()) correctByLayer[cell.y()]--;
+        if (next == Status.CORRECT.ordinal()) correctByLayer[cell.y()]++;
+        if (cell.y() == layer && next != Status.CORRECT.ordinal()) {
+            layerDelay.reset();
+            layerProgress = new LayerProgress(layerCells[layer].size(), correctByLayer[layer], 0, false);
+        }
         counts[previous]--; counts[next]++;
         Material material = materialByState[cell.state()];
         if (previous == Status.CORRECT.ordinal()) material.correct -= units[cell.state()];

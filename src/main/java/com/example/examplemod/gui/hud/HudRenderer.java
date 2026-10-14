@@ -109,6 +109,11 @@ public final class HudRenderer {
     }
 
     private static void drawElement(GuiGraphics g, Minecraft mc, HudElement element, boolean editing) {
+        long start = element.metric.begin();
+        try { drawMeasuredElement(g, mc, element, editing); } finally { element.metric.end(start); }
+    }
+
+    private static void drawMeasuredElement(GuiGraphics g, Minecraft mc, HudElement element, boolean editing) {
         element.measure(mc, editing);
         if (element.w <= 0 || element.h <= 0) {
             if (!editing) return;

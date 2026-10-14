@@ -321,3 +321,48 @@ tasks.register('playerRadarTest', JavaExec) {
     mainClass = 'com.example.examplemod.feature.PlayerRadarTest'
 }
 tasks.named('check') { dependsOn tasks.named('playerRadarTest') }
+
+tasks.register('layerProgressTest', JavaExec) {
+    dependsOn tasks.named('testClasses')
+    classpath = sourceSets.test.runtimeClasspath
+    mainClass = 'com.example.examplemod.blueprint.LayerProgressTest'
+}
+tasks.register('farmTrackerTest', JavaExec) {
+    dependsOn tasks.named('testClasses')
+    classpath = sourceSets.test.runtimeClasspath
+    mainClass = 'com.example.examplemod.farm.FarmTrackerTest'
+}
+tasks.named('check') { dependsOn tasks.named('layerProgressTest'), tasks.named('farmTrackerTest') }
+
+tasks.register('lazyBuildGateTest', JavaExec) {
+    dependsOn tasks.named('testClasses')
+    classpath = sourceSets.test.runtimeClasspath
+    mainClass = 'com.example.examplemod.blueprint.LazyBuildGateTest'
+}
+tasks.named('check') { dependsOn tasks.named('lazyBuildGateTest') }
+tasks.register('blueprintSavedStatesTest', JavaExec) {
+    dependsOn testClasses
+    classpath = sourceSets.test.runtimeClasspath
+    mainClass = 'com.example.examplemod.blueprint.BlueprintSavedStatesTest'
+}
+tasks.named('check') { dependsOn tasks.named('blueprintSavedStatesTest') }
+tasks.register('farmHarvestNoticeTest', JavaExec) {
+    dependsOn testClasses
+    classpath = sourceSets.test.runtimeClasspath
+    mainClass = 'com.example.examplemod.farm.FarmHarvestNoticeTest'
+}
+tasks.named('check') { dependsOn tasks.named('farmHarvestNoticeTest') }
+
+tasks.register('performanceMonitorTest', JavaExec) {
+    dependsOn testClasses
+    classpath = sourceSets.test.runtimeClasspath
+    mainClass = 'com.example.examplemod.performance.PerformanceMonitorTest'
+}
+tasks.named('check') { dependsOn tasks.named('performanceMonitorTest') }
+
+tasks.register('performanceRecordingTest', JavaExec) {
+    dependsOn testClasses
+    classpath = sourceSets.test.runtimeClasspath
+    mainClass = 'com.example.examplemod.performance.PerformanceRecordingTest'
+}
+tasks.named('check') { dependsOn tasks.named('performanceRecordingTest') }

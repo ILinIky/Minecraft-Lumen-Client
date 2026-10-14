@@ -27,6 +27,8 @@ public class ClientKeybinds {
     public static KeyMapping BLUEPRINT_LAYER_DOWN;
     public static KeyMapping BLUEPRINT_INFO;
     public static KeyMapping BLUEPRINT_ACCEPT;
+    public static KeyMapping BLUEPRINT_HIDE;
+    public static KeyMapping BLUEPRINT_BUILD;
     public static KeyMapping CHEST_SEARCH;
 
     @SubscribeEvent
@@ -53,6 +55,10 @@ public class ClientKeybinds {
         // N: in Vanilla frei. Falsch gesetzten Bauplan-Block als gewollte Variante übernehmen.
         BLUEPRINT_ACCEPT = createMapping("blueprint_accept", GLFW.GLFW_KEY_N);
         event.register(BLUEPRINT_ACCEPT);
+        BLUEPRINT_HIDE = createMapping("blueprint_hide", GLFW.GLFW_KEY_H);
+        event.register(BLUEPRINT_HIDE);
+        BLUEPRINT_BUILD = createMapping("blueprint_build", GLFW.GLFW_KEY_G);
+        event.register(BLUEPRINT_BUILD);
         CHEST_SEARCH = createMapping("chest_search", GLFW.GLFW_KEY_K);
         event.register(CHEST_SEARCH);
     }

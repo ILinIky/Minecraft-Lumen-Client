@@ -87,4 +87,19 @@ public final class RenderTypes extends RenderStateShard {
             BLUEPRINT_PIPELINE, RenderType.CompositeState.builder().setTextureState(BLOCK_SHEET_MIPPED)
                     .setLightmapState(LIGHTMAP).setOutputState(MAIN_TARGET)
                     .createCompositeState(false));
+
+    private static final RenderPipeline BLUEPRINT_ENTITY_PIPELINE = RenderPipeline.builder(RenderPipelines.ENTITY_SNIPPET)
+            .withLocation(ResourceLocation.fromNamespaceAndPath(ExampleMod.MODID, "pipeline/blueprint_entity"))
+            .withBlend(BlendFunction.TRANSLUCENT).withDepthWrite(false).withCull(false)
+            .withShaderDefine("ALPHA_CUTOUT", 0.01F).build();
+    private static final Map<ResourceLocation, RenderType> BLUEPRINT_ENTITIES = new HashMap<>();
+
+    public static RenderType blueprintEntity(ResourceLocation atlas) {
+        return BLUEPRINT_ENTITIES.computeIfAbsent(atlas, texture -> RenderType.create(
+                "examplemod_blueprint_entity_" + texture, 256 * 1024, false, true,
+                BLUEPRINT_ENTITY_PIPELINE, RenderType.CompositeState.builder()
+                        .setTextureState(new TextureStateShard(texture, false))
+                        .setLightmapState(LIGHTMAP).setOverlayState(OVERLAY).setOutputState(MAIN_TARGET)
+                        .createCompositeState(false)));
+    }
 }

@@ -4,6 +4,7 @@ import com.example.examplemod.ClientKeybinds;
 import com.example.examplemod.ExampleMod;
 import com.example.examplemod.blueprint.Blueprint;
 import com.example.examplemod.blueprint.BlueprintPlan;
+import com.example.examplemod.blueprint.BlueprintSavedStates;
 import com.example.examplemod.blueprint.BlueprintCapture;
 import com.example.examplemod.blueprint.BlueprintReader;
 import com.example.examplemod.blueprint.BlueprintWriter;
@@ -54,11 +55,10 @@ import java.util.concurrent.Future;
  * in config/examplemod/blueprints gemerkt und beim nächsten Betreten wiederhergestellt.
  */
 public final class Blueprints extends Module {
-    private final ExecutorService loader = Executors.newSingleThreadExecutor(r -> {
-        Thread thread = new Thread(r, "Lumen-Bauplan-Laden");
-        thread.setDaemon(true);
-        return thread;
-    });
+    private final java.util.concurrent.ThreadPoolExecutor loader = new java.util.concurrent.ThreadPoolExecutor(
+            1, 1, 10, java.util.concurrent.TimeUnit.SECONDS, new java.util.concurrent.LinkedBlockingQueue<>(),
+            r -> new Thread(r, "Lumen-Bauplan-Laden"));
+    { loader.allowCoreThreadTimeOut(true); }
     private final BlueprintRenderer renderer = new BlueprintRenderer();
     public final Setting.Slider opacity, range;
     /** Linien an Blöcken: Aus, Nur Fehler (rot/gelb/violett) oder Alles (zusätzlich blau = fehlt). */
@@ -67,6 +67,10 @@ public final class Blueprints extends Module {
     public final Setting.Mode blockInfo;
     public final Setting.Mode infoPosition;
     public final Setting.Bool pickBlock;
+    public final Setting.Bool autoLayer;
+    public final Setting.Bool lazyBuild;
+    public final Setting.Mode lazyMode, lazyTempo;
+    public final LazyBuilder lazyBuilder = new LazyBuilder(this);
     public static final String POSITION_TOP = "Oben mittig", POSITION_CROSSHAIR = "Am Fadenkreuz";
     /** Ob die Blockumrandung von hier eingeschaltet wurde und beim Ausschalten wieder aus soll. */
     private boolean outlineEnabledByUs;
@@ -80,15 +84,24 @@ public final class Blueprints extends Module {
     private String message = "Eine .litematic-, .schem- oder Struktur-.nbt-Datei auswählen.";
     /** Zuletzt gespeicherte Platzierung; bei Änderung wird die Welt-Datei neu geschrieben. */
     private String savedSignature;
+    private String sourceHash;
+    private final java.util.ArrayDeque<Integer> hiddenUndo = new java.util.ArrayDeque<>();
 
     /** Platzierung, die beim Wiederherstellen statt "vor dem Spieler" übernommen wird. */
     private record Placement(BlockPos origin, String dimension, int turns, boolean mirrored,
                              BlueprintPlan.Layers layers, int layer, boolean onlyMissing, boolean visible, int[] accepted,
-                             java.util.Map<String, String> replacements) {}
+                             int[] ignored, String sourceHash, java.util.Map<String, String> replacements) {}
 
     public Blueprints() {
         super("blueprints", "Baupläne", "Transparente Blockvorschau, Ebenen und Materialbedarf", Category.WORLD);
         notPersistent();
+        lazyBuild = add(new Setting.Bool("Lazy-Bauen", "Taste umschalten: erreichbare Bauplan-Blöcke nacheinander setzen", false));
+        lazyMode = add(new Setting.Mode("Lazy-Bereich", "Nur im Blickfeld oder alle erreichbaren Stellen der gewählten Ebene",
+                "Im Blickfeld", "Im Blickfeld", "Aktuelle Ebene"));
+        lazyTempo = add(new Setting.Mode("Lazy-Tempo", "Maximal 2 / 3,3 / 5 Blöcke pro Sekunde, jeweils mit Serverbestätigung",
+                "Normal", "Ruhig", "Normal", "Zügig"));
+        autoLayer = add(new Setting.Bool("Automatischer Ebenenwechsel",
+                "Fertige Ebene nach 1,5 Sekunden erneut prüfen und zur nächsten wechseln", false));
         opacity = add(new Setting.Slider("Deckkraft", "Durchsichtige Vorschau mit echten Blocktexturen", 50, 15, 100, 5, "%"));
         range = add(new Setting.Slider("Sichtweite", "Vorschau nur in geladenen Chunks innerhalb dieser Entfernung", 48, 16, 96, 8, "Bl."));
         markers = add(new Setting.Mode("Markierungen",
@@ -113,50 +126,81 @@ public final class Blueprints extends Module {
     public String message() { return message; }
     public BlueprintRenderer renderer() { return renderer; }
 
-    public void load(Path path) { load(path, null); }
+    public void load(Path path) { saveState(); load(path.toAbsolutePath().normalize(), null); }
 
-    private void load(Path path, Placement placement) {
+    private void load(Path path, Placement initialPlacement) {
         if (mc.level == null || mc.player == null) { message = "Bitte zuerst eine Welt betreten."; return; }
         if (pending != null) pending.cancel(true);
         int request = ++generation;
-        String dimension = placement != null ? placement.dimension() : mc.level.dimension().location().toString();
-        BlockPos anchor = placement != null ? placement.origin()
-                : mc.player.blockPosition().relative(mc.player.getDirection(), 3);
+        lazyBuilder.cancel();
+        Path worldState = stateFile();
+        String fallbackDimension = mc.level.dimension().location().toString();
+        BlockPos fallbackAnchor = mc.player.blockPosition().relative(mc.player.getDirection(), 3);
         loading = true;
         message = "Lade " + path.getFileName() + " …";
         pending = loader.submit(() -> {
             try {
+                Placement placement = initialPlacement;
+                if (placement == null && worldState != null) {
+                    // Migrate the former single active state before another file can replace it.
+                    JsonObject last = BlueprintSavedStates.read(worldState);
+                    if (last != null) {
+                        Path oldArchive = BlueprintSavedStates.archive(worldState, Path.of(last.get("file").getAsString()));
+                        if (!Files.exists(oldArchive)) ClientConfig.writeAtomically(oldArchive, last.toString());
+                    }
+                    JsonObject saved = BlueprintSavedStates.read(BlueprintSavedStates.archive(worldState, path));
+                    if (saved != null) {
+                        if (!BlueprintSavedStates.identity(path).equals(BlueprintSavedStates.identity(Path.of(saved.get("file").getAsString()))))
+                            throw new IOException("Gespeicherter Zustand gehört zu einer anderen Bauplandatei");
+                        placement = placement(saved);
+                    }
+                }
                 Blueprint data = BlueprintReader.read(path);
+                String fingerprint = BlueprintSavedStates.fingerprint(path);
+                boolean changedFile = placement != null && !BlueprintSavedStates.sameContents(placement.sourceHash(), fingerprint);
+                if (changedFile && worldState != null) {
+                    Path previous = BlueprintSavedStates.archive(worldState, path);
+                    if (Files.exists(previous)) Files.copy(previous, previous.resolveSibling(previous.getFileName()
+                            + ".before-source-change-" + java.util.UUID.randomUUID() + ".bak"));
+                }
+                Placement restoredPlacement = placement;
+                String dimension = placement == null ? fallbackDimension : placement.dimension();
+                BlockPos anchor = placement == null ? fallbackAnchor : placement.origin();
                 BlueprintPreviews.prepare(path, data);
                 mc.execute(() -> {
                     if (request != generation) return;
                     loading = false;
-                    if (mc.level == null || (placement == null && !mc.level.dimension().location().toString().equals(dimension))) {
+                    if (mc.level == null || (restoredPlacement == null && !mc.level.dimension().location().toString().equals(dimension))) {
                         message = "Welt oder Dimension gewechselt. Bitte erneut laden.";
                         return;
                     }
                     try {
-                        var restored = placement == null ? java.util.Map.<String, String>of() : placement.replacements();
+                        var restored = restoredPlacement == null || changedFile ? java.util.Map.<String, String>of() : restoredPlacement.replacements();
                         Blueprint replaced = restored.isEmpty() ? data : com.example.examplemod.blueprint.BlueprintMaterials.remap(data, restored, BlueprintPlan::replacementState);
                         BlueprintPlan loaded = new BlueprintPlan(replaced, anchor, dimension);
-                        if (placement != null) {
-                            loaded.setTransform(placement.turns(), placement.mirrored());
-                            loaded.layers = placement.layers();
-                            loaded.layer = Math.max(0, Math.min(data.sizeY() - 1, placement.layer()));
-                            loaded.onlyMissing = placement.onlyMissing();
-                            loaded.restoreAccepted(placement.accepted());
+                        if (restoredPlacement != null) {
+                            loaded.setTransform(restoredPlacement.turns(), restoredPlacement.mirrored());
+                            loaded.layers = restoredPlacement.layers();
+                            loaded.layer = Math.max(0, Math.min(data.sizeY() - 1, restoredPlacement.layer()));
+                            loaded.onlyMissing = restoredPlacement.onlyMissing();
+                            if (!changedFile) {
+                                loaded.restoreAccepted(restoredPlacement.accepted());
+                                loaded.restoreIgnored(restoredPlacement.ignored());
+                            }
                         }
+                        saveState();
                         plan = loaded;
                         focusItem = null;
                         sourceBlueprint = data;
                         replacements.clear();
                         replacements.putAll(restored);
-                        file = path;
+                        file = path; sourceHash = fingerprint; savedSignature = null; hiddenUndo.clear();
                         renderer.clear();
-                        setEnabled(placement == null || placement.visible(), false);
+                        setEnabled(restoredPlacement == null || restoredPlacement.visible(), false);
                         message = data.cells().size() + " Blöcke geladen · Platzierung prüfen";
-                        if (placement == null) Notifications.success("Bauplan geladen", data.name());
+                        if (restoredPlacement == null) Notifications.success("Bauplan geladen", data.name());
                         else Notifications.info("Bauplan wiederhergestellt", data.name());
+                        if (changedFile) Notifications.warning("Bauplandatei geändert", "Platzierung behalten; Anpassungen zur Sicherheit zurückgesetzt");
                         saveState();
                     } catch (RuntimeException failure) { failed(failure); }
                 });
@@ -172,14 +216,16 @@ public final class Blueprints extends Module {
         Notifications.error("Bauplan", message);
     }
 
-    /** Plan entladen und für diese Welt vergessen. */
+    /** Unload the active plan; keep each file's saved workspace. */
     public void clear() {
+        saveState();
         unload();
         message = "Bauplan entladen. Deine Welt bleibt unverändert.";
         deleteState();
     }
 
     private void unload() {
+        lazyBuilder.cancel();
         generation++;
         if (pending != null) pending.cancel(true);
         loading = false;
@@ -187,7 +233,7 @@ public final class Blueprints extends Module {
         focusItem = null;
         sourceBlueprint = null;
         replacements.clear();
-        file = null;
+        file = null; sourceHash = null; hiddenUndo.clear();
         savedSignature = null;
         renderer.clear();
         // Eine laufende Bereichsauswahl bleibt sichtbar, auch ohne geladenen Plan.
@@ -403,6 +449,7 @@ public final class Blueprints extends Module {
         if (target == null || signature == null || signature.equals(savedSignature)) return;
         BlockPos o = plan.origin();
         JsonObject json = new JsonObject();
+        json.addProperty("version", 2); json.addProperty("sourceHash", sourceHash);
         json.addProperty("file", file.toAbsolutePath().toString());
         json.addProperty("dimension", plan.dimension);
         json.addProperty("x", o.getX());
@@ -417,53 +464,64 @@ public final class Blueprints extends Module {
         com.google.gson.JsonArray accepted = new com.google.gson.JsonArray();
         for (int cell : plan.acceptedCells()) accepted.add(cell);
         json.add("accepted", accepted);
+        com.google.gson.JsonArray ignored = new com.google.gson.JsonArray();
+        for (int cell : plan.ignoredCells()) ignored.add(cell);
+        json.add("ignored", ignored);
         JsonObject swaps = new JsonObject();
         replacements.forEach(swaps::addProperty);
         json.add("replacements", swaps);
-        ClientConfig.writeAtomically(target, json.toString());
+        Path archive = BlueprintSavedStates.archive(target, file);
+        String snapshot = json.toString();
+        loader.execute(() -> {
+            ClientConfig.writeAtomically(archive, snapshot);
+            ClientConfig.writeAtomically(target, snapshot);
+        });
         savedSignature = signature;
     }
 
     private void deleteState() {
         Path target = stateFile();
         if (target == null) return;
-        try {
-            Files.deleteIfExists(target);
-        } catch (IOException e) {
-            ExampleMod.LOGGER.warn("Bauplan-Zustand konnte nicht gelöscht werden: {}", target, e);
-        }
+        loader.execute(() -> {
+            try { Files.deleteIfExists(target); }
+            catch (IOException e) { ExampleMod.LOGGER.warn("Aktiver Bauplan konnte nicht entladen werden", e); }
+        });
     }
 
-    /** Beim Betreten einer Welt: den dort zuletzt genutzten Plan wieder laden. */
+    private static Placement placement(JsonObject json) {
+        java.util.Map<String, String> swaps = new java.util.TreeMap<>();
+        if (json.has("replacements")) json.getAsJsonObject("replacements").entrySet().forEach(e -> swaps.put(e.getKey(), e.getValue().getAsString()));
+        return new Placement(new BlockPos(json.get("x").getAsInt(), json.get("y").getAsInt(), json.get("z").getAsInt()),
+                json.get("dimension").getAsString(), json.get("turns").getAsInt(), json.get("mirrored").getAsBoolean(),
+                BlueprintPlan.Layers.valueOf(json.get("layers").getAsString()), json.get("layer").getAsInt(),
+                json.get("onlyMissing").getAsBoolean(), json.get("visible").getAsBoolean(),
+                BlueprintSavedStates.cells(json, "accepted"), BlueprintSavedStates.cells(json, "ignored"),
+                json.has("sourceHash") && !json.get("sourceHash").isJsonNull() ? json.get("sourceHash").getAsString() : null, swaps);
+    }
+
+    /** Reads after queued saves, including a rapid leave/rejoin of the same world. */
     public void restore() {
         Path target = stateFile();
-        if (target == null || !Files.exists(target)) return;
-        try (Reader reader = Files.newBufferedReader(target, StandardCharsets.UTF_8)) {
-            JsonObject json = JsonParser.parseReader(reader).getAsJsonObject();
-            Path path = Path.of(json.get("file").getAsString());
-            if (!Files.exists(path)) {
-                Notifications.warning("Bauplan", "Datei nicht mehr vorhanden: " + path.getFileName());
-                deleteState();
-                return;
+        if (target == null) return;
+        int request = ++generation;
+        loader.execute(() -> {
+            try {
+                JsonObject json = BlueprintSavedStates.read(target);
+                if (json == null) return;
+                Path path = Path.of(json.get("file").getAsString());
+                Placement saved = placement(json);
+                mc.execute(() -> {
+                    if (request != generation || mc.level == null) return;
+                    if (!Files.exists(path)) {
+                        Notifications.warning("Bauplan", "Datei nicht mehr vorhanden: " + path.getFileName()); return;
+                    }
+                    load(path, saved);
+                });
+            } catch (IOException | RuntimeException failure) {
+                ExampleMod.LOGGER.warn("Bauplan-Zustand ist ungültig: {}", target, failure);
+                mc.execute(() -> { if (request == generation) Notifications.warning("Bauplan", "Speicherstand nicht lesbar; Datei bleibt erhalten"); });
             }
-            BlueprintPlan.Layers layers = BlueprintPlan.Layers.valueOf(json.get("layers").getAsString());
-            int[] accepted = new int[0];
-            if (json.has("accepted")) {
-                var array = json.getAsJsonArray("accepted");
-                accepted = new int[array.size()];
-                for (int i = 0; i < accepted.length; i++) accepted[i] = array.get(i).getAsInt();
-            }
-            java.util.Map<String, String> swaps = new java.util.TreeMap<>();
-            if (json.has("replacements")) json.getAsJsonObject("replacements").entrySet().forEach(e -> swaps.put(e.getKey(), e.getValue().getAsString()));
-            Placement placement = new Placement(
-                    new BlockPos(json.get("x").getAsInt(), json.get("y").getAsInt(), json.get("z").getAsInt()),
-                    json.get("dimension").getAsString(), json.get("turns").getAsInt(), json.get("mirrored").getAsBoolean(),
-                    layers, json.get("layer").getAsInt(), json.get("onlyMissing").getAsBoolean(), json.get("visible").getAsBoolean(),
-                    accepted, swaps);
-            load(path, placement);
-        } catch (IOException | RuntimeException failure) {
-            ExampleMod.LOGGER.warn("Bauplan-Zustand ist ungültig: {}", target, failure);
-        }
+        });
     }
 
     public Blueprint sourceBlueprint() { return sourceBlueprint; }
@@ -526,6 +584,7 @@ public final class Blueprints extends Module {
                 return plan.blueprint.palette().get(state).equals(data.palette().get(state));
             }).toArray();
             updated.restoreAccepted(accepted);
+            updated.restoreIgnored(plan.ignoredCells());
             plan = updated;
             replacements.clear(); replacements.putAll(next);
             renderer.clear(); hover = null; savedSignature = null;
@@ -553,14 +612,19 @@ public final class Blueprints extends Module {
     }
 
     @Override protected void onDisable() {
+        lazyBuilder.cancel();
+        if (plan != null) plan.resetLayerProgress();
         saveState();
         if (outlineEnabledByUs && ModuleManager.BLOCK_OUTLINE != null) ModuleManager.BLOCK_OUTLINE.setEnabled(false, false);
         outlineEnabledByUs = false;
     }
 
     @Override public void onTick() {
+        lazyBuilder.tick(plan);
         if (plan == null) return;
-        plan.scan(mc.level);
+        int before = plan.layer;
+        plan.scan(mc.level, autoLayer.get() && !lazyBuilder.waiting());
+        if (plan.layer != before) Notifications.success("Ebene fertig", "Weiter mit Ebene " + (plan.layer + 1));
         saveState();
     }
 
@@ -570,6 +634,7 @@ public final class Blueprints extends Module {
         if (plan == null || !plan.inDimension(mc.level)) return;
         syncFocus();
         renderer.render(plan, context, renderStyle(), range.getInt());
+        lazyBuilder.render(context);
         // Der anvisierte Geisterblock ist immer umrandet; den Tooltip gibt es nur mit Block-Info.
         if (mc.level == null) return;
         hover = findHover(context.cameraPos(), Vec3.directionFromRotation(context.camera().getXRot(), context.camera().getYRot()));
@@ -625,6 +690,9 @@ public final class Blueprints extends Module {
      * Bereits korrekt gebaute Zellen werden übersprungen.
      */
     private Hover findHover(Vec3 from, Vec3 look) {
+        return findHover(from, look, false);
+    }
+    private Hover findHover(Vec3 from, Vec3 look, boolean includeBuilt) {
         double limit = Math.min(HOVER_DISTANCE, range.get());
         Vec3 to = from.add(look.scale(limit));
         BlockHitResult real = mc.level.clip(new ClipContext(from, to, ClipContext.Block.OUTLINE, ClipContext.Fluid.NONE, mc.player));
@@ -643,9 +711,9 @@ public final class Blueprints extends Module {
         for (int steps = 0; steps < 128 && t <= limit; steps++) {
             pos.set(x, y, z);
             int index = plan.cellAt(pos);
-            if (index >= 0 && plan.focused(plan.blueprint.cells().get(index))) {
+            if (index >= 0 && !plan.ignored(index) && plan.focused(plan.blueprint.cells().get(index))) {
                 BlueprintPlan.Status status = plan.compare(mc.level, index, pos);
-                if (status != BlueprintPlan.Status.CORRECT && status != BlueprintPlan.Status.UNCHECKED) {
+                if ((includeBuilt || status != BlueprintPlan.Status.CORRECT) && status != BlueprintPlan.Status.UNCHECKED) {
                     return new Hover(index, pos.immutable(), status);
                 }
             }
@@ -654,6 +722,38 @@ public final class Blueprints extends Module {
             else { z += stepZ; t = maxZ; maxZ += deltaZ; }
         }
         return null;
+    }
+
+    public void onHideKey() {
+        if (!isEnabled() || loading || plan == null || mc.player == null || mc.level == null || !plan.inDimension(mc.level)) return;
+        Hover target = findHover(mc.player.getEyePosition(), mc.player.getViewVector(1F), true);
+        if (target == null) { Notifications.info("Bauplan bearbeiten", "Zuerst einen sichtbaren Bauplan-Block anvisieren"); return; }
+        lazyBuilder.cancel();
+        plan.setIgnored(mc.level, target.index(), true);
+        hiddenUndo.addLast(target.index());
+        renderer.clear(); hover = null; saveState();
+        if (ModuleManager.MATERIAL_LIST != null) ModuleManager.MATERIAL_LIST.refresh();
+        Notifications.success("Bauplan-Block ausgeblendet", "Zählt als erledigt · im Bauplan-Menü rückgängig machen");
+    }
+    public boolean canUndoHidden() { return !hiddenUndo.isEmpty(); }
+    public void undoHidden() {
+        if (plan == null || loading || hiddenUndo.isEmpty()) return;
+        lazyBuilder.cancel();
+        plan.setIgnored(mc.level, hiddenUndo.removeLast(), false);
+        renderer.clear(); hover = null; saveState();
+        if (ModuleManager.MATERIAL_LIST != null) ModuleManager.MATERIAL_LIST.refresh();
+    }
+    /** Restore original blocks and materials while retaining the chosen placement and layer. */
+    public void restoreOriginal() {
+        if (plan == null || sourceBlueprint == null || loading) return;
+        lazyBuilder.cancel();
+        BlueprintPlan original = new BlueprintPlan(sourceBlueprint, plan);
+        original.setTransform(plan.turns(), plan.mirrored());
+        original.layers = plan.layers; original.layer = plan.layer; original.onlyMissing = plan.onlyMissing;
+        plan = original; replacements.clear(); hiddenUndo.clear(); focusItem = null;
+        renderer.clear(); hover = null; savedSignature = null; saveState();
+        if (ModuleManager.MATERIAL_LIST != null) ModuleManager.MATERIAL_LIST.refresh();
+        Notifications.success("Original wiederhergestellt", "Ausgeblendete Blöcke, Abweichungen und Materialtausch zurückgesetzt");
     }
 
     // ---- Abweichung übernehmen: gewollte Variante statt Fehler ----

@@ -10,6 +10,7 @@ import net.minecraft.client.gui.GuiGraphics;
  * Fenstergröße und GUI-Skalierung passt.
  */
 public abstract class HudElement {
+    public final com.example.examplemod.performance.PerformanceMonitor.Metric metric;
     public final String id;
     public final String name;
     private final Setting.Bool visible;
@@ -22,6 +23,8 @@ public abstract class HudElement {
     public int x, y, w, h;
 
     protected HudElement(String id, String name, Setting.Bool visible, float anchorX, float anchorY, int offsetX, int offsetY) {
+        metric = com.example.examplemod.performance.PerformanceMonitor.INSTANCE.metric(name,
+                com.example.examplemod.performance.PerformanceMonitor.Phase.HUD);
         this.id = id;
         this.name = name;
         this.visible = visible;

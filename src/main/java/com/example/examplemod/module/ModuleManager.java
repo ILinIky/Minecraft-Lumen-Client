@@ -32,6 +32,9 @@ import java.util.List;
 
 public final class ModuleManager {
     private static final List<Module> MODULES = new ArrayList<>();
+    private static final com.example.examplemod.performance.PerformanceMonitor.Metric CONFIG_SAVE =
+            com.example.examplemod.performance.PerformanceMonitor.INSTANCE.metric("Einstellungen speichern",
+                    com.example.examplemod.performance.PerformanceMonitor.Phase.OTHER);
     private static boolean initialized;
     private static boolean dirty;
     private static int saveCooldown;
@@ -40,6 +43,7 @@ public final class ModuleManager {
     public static BlockEsp BLOCK_ESP;
     public static EntityEsp ENTITY_ESP;
     public static Fullbright FULLBRIGHT;
+    public static com.example.examplemod.feature.Performance PERFORMANCE;
     public static Hud HUD;
     public static Flight FLIGHT;
     public static NoFall NO_FALL;
@@ -47,6 +51,7 @@ public final class ModuleManager {
     public static Invisibility INVISIBILITY;
     public static AutoDrop AUTO_DROP;
     public static ChestMemory CHEST_MEMORY;
+    public static com.example.examplemod.feature.FarmTracker FARM_TRACKER;
     public static Waypoints WAYPOINTS;
     public static LightLevel LIGHT_LEVEL;
     public static ChunkBorders CHUNK_BORDERS;
@@ -85,8 +90,10 @@ public final class ModuleManager {
         BLUEPRINTS = register(new Blueprints());
         MATERIAL_LIST = register(new com.example.examplemod.feature.MaterialList());
         CHEST_MEMORY = register(new ChestMemory());
+        FARM_TRACKER = register(new com.example.examplemod.feature.FarmTracker());
         // Vor dem HUD, weil dessen Elemente die Minimap brauchen.
         MINIMAP = register(new Minimap());
+        PERFORMANCE = register(new com.example.examplemod.feature.Performance());
         HUD = register(new Hud());
         DESIGN = register(new Design());
         ClientConfig.load(MODULES);
@@ -180,15 +187,22 @@ public final class ModuleManager {
     public static void onTick() {
         if (!initialized) return;
         for (Module module : MODULES) {
-            if (module.isEnabled()) module.onTick();
+            if (!module.isEnabled()) continue;
+            long start = module.tickMetric.begin();
+            try { module.onTick(); } finally { module.tickMetric.end(start); }
         }
-        if (dirty && --saveCooldown <= 0) saveNow();
+        if (dirty && --saveCooldown <= 0) {
+            long start = CONFIG_SAVE.begin();
+            try { saveNow(); } finally { CONFIG_SAVE.end(start); }
+        }
     }
 
     public static void onWorldRender(WorldRenderContext context) {
         if (!initialized) return;
         for (Module module : MODULES) {
-            if (module.isEnabled()) module.onWorldRender(context);
+            if (!module.isEnabled()) continue;
+            long start = module.worldMetric.begin();
+            try { module.onWorldRender(context); } finally { module.worldMetric.end(start); }
         }
     }
 

@@ -36,6 +36,7 @@ public class Hud extends Module {
     public final Setting.Bool durabilityWarning;
     public final Setting.Bool materialList;
     public final Setting.Bool playerRadar;
+    public final Setting.Bool blueprintLayer;
     private final List<HudElement> elements;
 
     private final Map<EquipmentSlot, Float> lastRatio = new EnumMap<>(EquipmentSlot.class);
@@ -56,6 +57,7 @@ public class Hud extends Module {
         durabilityWarning = add(new Setting.Bool("Haltbarkeitswarnung", "Hinweis, wenn Rüstung oder Werkzeug fast kaputt ist", true));
         materialList = add(new Setting.Bool("Sammelliste", "Angeheftete Materialien und Fortschritt", true));
         playerRadar = add(new Setting.Bool("Spieler-Radar", "Ausgewählte Spieler im eingestellten Radius, standardmäßig rechts", true));
+        blueprintLayer = add(new Setting.Bool("Bauplan-Ebene", "Fortschritt der aktuellen Bauplan-Ebene", true));
         add(new Setting.Action("Positionen zurücksetzen", "Alle Elemente an ihren Standardplatz", () -> {
             elements().forEach(HudElement::reset);
             ModuleManager.markDirty();

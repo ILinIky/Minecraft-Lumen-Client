@@ -4,6 +4,8 @@ import com.example.examplemod.ExampleMod;
 import com.example.examplemod.blueprint.Blueprint;
 import com.example.examplemod.blueprint.BlueprintPlan;
 import com.example.examplemod.compat.RenderTypes;
+import com.example.examplemod.compat.BlueprintSpecialModels;
+import com.mojang.blaze3d.vertex.PoseStack;
 import com.example.examplemod.gui.Theme;
 import com.mojang.blaze3d.vertex.VertexConsumer;
 import net.minecraft.Util;
@@ -53,6 +55,7 @@ public final class BlueprintRenderer {
     private record Candidate(int index, BlockPos pos, double distance) {}
     private List<Candidate> candidates = List.of();
     private final Set<BlockState> failedModels = new HashSet<>();
+    private final BlueprintSpecialModels specialModels = new BlueprintSpecialModels();
     private long refreshed;
     private BlueprintPlan previous;
     private BlockPos anchor;
@@ -65,7 +68,7 @@ public final class BlueprintRenderer {
     private final List<BlockModelPart> parts = new ArrayList<>();
 
     public boolean limited() { return limited; }
-    public void clear() { candidates = List.of(); previous = null; refreshed = 0; failedModels.clear(); limited = false; }
+    public void clear() { candidates = List.of(); previous = null; refreshed = 0; failedModels.clear(); specialModels.clear(); limited = false; }
 
     public void render(BlueprintPlan plan, WorldRenderContext context, Style style, int distance) {
         float opacity = style.opacity();
@@ -80,7 +83,7 @@ public final class BlueprintRenderer {
             for (int n = 0; n < indices.size(); n++) {
                 int i = indices.getInt(n);
                 Blueprint.Cell cell = plan.blueprint.cells().get(i);
-                if (!plan.visibleLayer(cell.y()) || !plan.focused(cell)) continue;
+                if (plan.ignored(i) || !plan.visibleLayer(cell.y()) || !plan.focused(cell)) continue;
                 BlockPos pos = plan.position(cell);
                 double d = Vec3.atCenterOf(pos).distanceToSqr(context.cameraPos());
                 if (d > (double) distance * distance || !level.hasChunk(pos.getX() >> 4, pos.getZ() >> 4)) continue;
@@ -103,9 +106,11 @@ public final class BlueprintRenderer {
         // Keep only lightweight error boxes; do not interleave line and quad buffers.
         List<Candidate> markers = new ArrayList<>();
         List<Candidate> fills = new ArrayList<>();
+        List<Candidate> special = new ArrayList<>();
         // Gewähltes Material: jede offene Stelle umranden, auch kleine Blöcke wie Schilder oder Knöpfe.
         List<Candidate> focused = new ArrayList<>();
         for (Candidate candidate : candidates) {
+            if (plan.ignored(candidate.index)) continue;
             Blueprint.Cell cell = plan.blueprint.cells().get(candidate.index);
             BlueprintPlan.Status status = plan.compare(level, candidate.index, candidate.pos);
             if (status == BlueprintPlan.Status.UNCHECKED || (plan.onlyMissing && status == BlueprintPlan.Status.CORRECT)) continue;
@@ -128,9 +133,10 @@ public final class BlueprintRenderer {
                     model = false;
                 } finally { poses.popPose(); }
             }
-            // Truhen, Betten, Schilder, Köpfe und Flüssigkeiten haben kein normales Blockmodell:
-            // halbtransparent in ihrer Kartenfarbe füllen, damit sie trotzdem als Körper erkennbar sind.
-            if (!model && state != null && status == BlueprintPlan.Status.MISSING) fills.add(candidate);
+            if (!model && state != null && status == BlueprintPlan.Status.MISSING) {
+                if (BlueprintSpecialModels.supports(state) && !failedModels.contains(state)) special.add(candidate);
+                else fills.add(candidate);
+            }
             boolean error = status == BlueprintPlan.Status.WRONG_BLOCK || status == BlueprintPlan.Status.WRONG_STATE
                     || status == BlueprintPlan.Status.UNSUPPORTED;
             boolean mark = switch (style.markers()) {
@@ -141,6 +147,28 @@ public final class BlueprintRenderer {
             if (mark) markers.add(candidate);
         }
         context.buffers().endBatch(ghostType);
+
+        // Separate pass: switching entity texture buffers must not invalidate the terrain consumer.
+        Set<RenderType> specialTypes = new HashSet<>();
+        for (Candidate candidate : special) {
+            BlockState state = plan.state(plan.blueprint.cells().get(candidate.index));
+            // Isolated stack also contains a third-party renderer's unbalanced pushes on failure.
+            PoseStack modelPoses = new PoseStack();
+            modelPoses.last().pose().set(poses.last().pose());
+            modelPoses.last().normal().set(poses.last().normal());
+            modelPoses.translate(context.rx(candidate.pos.getX()), context.ry(candidate.pos.getY()), context.rz(candidate.pos.getZ()));
+            try {
+                if (!specialModels.render(state, modelPoses, atlas -> {
+                    RenderType type = RenderTypes.blueprintEntity(atlas);
+                    specialTypes.add(type);
+                    return new AlphaConsumer(context.buffers().getBuffer(type), opacity);
+                })) fills.add(candidate);
+            } catch (RuntimeException failure) {
+                if (failedModels.add(state)) ExampleMod.LOGGER.warn("Bauplan: Spezialmodell wird als Ersatzkoerper dargestellt: {}", state, failure);
+                fills.add(candidate);
+            }
+        }
+        for (RenderType type : specialTypes) context.buffers().endBatch(type);
 
         if (!fills.isEmpty()) {
             RenderType quadsType = RenderTypes.filledQuads();

@@ -13,6 +13,8 @@ import java.util.List;
 public abstract class Module {
     protected final Minecraft mc = Minecraft.getInstance();
 
+    public final com.example.examplemod.performance.PerformanceMonitor.Metric tickMetric;
+    public final com.example.examplemod.performance.PerformanceMonitor.Metric worldMetric;
     private final String id;
     private final String name;
     private final String description;
@@ -29,6 +31,10 @@ public abstract class Module {
     public float expandAnimation;
 
     protected Module(String id, String name, String description, Category category, int defaultKey) {
+        tickMetric = com.example.examplemod.performance.PerformanceMonitor.INSTANCE.metric(name,
+                com.example.examplemod.performance.PerformanceMonitor.Phase.TICK);
+        worldMetric = com.example.examplemod.performance.PerformanceMonitor.INSTANCE.metric(name,
+                com.example.examplemod.performance.PerformanceMonitor.Phase.WORLD);
         this.id = id;
         this.name = name;
         this.description = description;
