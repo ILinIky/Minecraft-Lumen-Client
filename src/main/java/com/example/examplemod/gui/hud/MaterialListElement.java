@@ -26,8 +26,9 @@ public final class MaterialListElement extends HudElement {
 
     /** Zeile unter der Maus (Lage vom letzten Bild), sonst {@code null}. */
     public MaterialList.Row rowAt(double mouseX, double mouseY) {
-        if (!UiRender.inside(mouseX, mouseY, x, y + 22, w, shown * 25)) return null;
-        int index = viewport.offset() + (int) ((mouseY - y - 22) / 25);
+        double lx = localX(mouseX), ly = localY(mouseY);
+        if (!UiRender.inside(lx, ly, 0, 22, baseW, shown * 25)) return null;
+        int index = viewport.offset() + (int) ((ly - 22) / 25);
         return index >= 0 && index < rows.size() ? rows.get(index) : null;
     }
     @Override public void render(GuiGraphics g, Minecraft mc, boolean editing, float dt) {

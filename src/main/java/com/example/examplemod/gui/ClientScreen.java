@@ -195,15 +195,16 @@ public abstract class ClientScreen extends Screen {
             @Override public void renderWidget(GuiGraphics graphics, int mouseX, int mouseY, float partialTick) {
                 setTextColor(Theme.TEXT);
                 setTextColorUneditable(Theme.TEXT_DIM);
-                setHint(Component.literal(hint).withColor(Theme.TEXT_DIM));
                 super.renderWidget(graphics, mouseX, mouseY, partialTick);
+                // Vanilla zeichnet den Platzhalter immer mit Schatten (wirkt fett); daher selbst ohne Schatten.
+                if (isVisible() && getValue().isEmpty() && !isFocused())
+                    graphics.drawString(font, hint, getX(), getY() + (getHeight() - 8) / 2, Theme.TEXT_DIM, false);
             }
         };
         box.setBordered(false);
         box.setTextShadow(false);
         box.setMaxLength(maxLength);
         box.setTextColor(Theme.TEXT);
-        box.setHint(Component.literal(hint).withColor(Theme.TEXT_DIM));
         return box;
     }
 

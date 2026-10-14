@@ -29,8 +29,7 @@ public final class HudRenderer {
         if (mc.player == null || hud == null || !hud.isEnabled() || mc.options.hideGui || mc.getDebugOverlay().showDebugScreen()) return false;
         for (HudElement element : hud.elements()) {
             if (!(element instanceof MaterialListElement list) || !element.isVisible()) continue;
-            element.measure(mc, false);
-            element.layout(mc, mc.getWindow().getGuiScaledWidth(), mc.getWindow().getGuiScaledHeight(), false);
+            element.place(mc, mc.getWindow().getGuiScaledWidth(), mc.getWindow().getGuiScaledHeight(), false);
             if (element.h <= 0 || mouseX != null && !com.example.examplemod.gui.UiRender.inside(mouseX, mouseY, element.x, element.y, element.w, element.h)) return false;
             return list.scroll(delta);
         }
@@ -114,16 +113,16 @@ public final class HudRenderer {
     }
 
     private static void drawMeasuredElement(GuiGraphics g, Minecraft mc, HudElement element, boolean editing) {
-        element.measure(mc, editing);
+        element.place(mc, g.guiWidth(), g.guiHeight(), editing);
         if (element.w <= 0 || element.h <= 0) {
             if (!editing) return;
-            element.w = mc.font.width(element.name) + 12;
-            element.h = 14;
+            // Gerade leer: im Editor als Platzhalter mit Namen, ohne Größenänderung.
+            element.w = element.baseW = mc.font.width(element.name) + 12;
+            element.h = element.baseH = 14;
             element.layout(mc, g.guiWidth(), g.guiHeight(), true);
             return;
         }
-        element.layout(mc, g.guiWidth(), g.guiHeight(), editing);
         if (editing && !element.isVisible()) return;
-        element.render(g, mc, editing, frameDelta);
+        element.draw(g, mc, editing, frameDelta);
     }
 }

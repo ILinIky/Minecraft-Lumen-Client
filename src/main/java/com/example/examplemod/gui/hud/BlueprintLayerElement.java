@@ -13,9 +13,7 @@ public final class BlueprintLayerElement extends HudElement {
     private int percent;
     private float barPercent;
     private BlueprintPlan shownPlan;
-    private int shownLayer = -1, shownConfirmed;
-    private boolean shownActive;
-    private long nextCounterUpdate;
+    private int shownLayer = -1;
     public BlueprintLayerElement(Setting.Bool visible) { super("blueprint_layer", "Bauplan-Ebene", visible, 0.5F, 1, 0, 62); }
     @Override public void measure(Minecraft mc, boolean editing) {
         var feature = ModuleManager.BLUEPRINTS;
@@ -27,7 +25,6 @@ public final class BlueprintLayerElement extends HudElement {
         if (shownPlan != plan || shownLayer != (plan == null ? -1 : plan.layer)) {
             shownPlan = plan; shownLayer = plan == null ? -1 : plan.layer;
             barPercent = percent;
-            nextCounterUpdate = 0;
         }
         label = plan == null ? "Ebene 3/12 – 87 %" : "Ebene " + (plan.layer + 1) + "/" + plan.blueprint.sizeY()
                 + " – " + (progress.checked() ? percent + " %" : "…");
@@ -38,15 +35,16 @@ public final class BlueprintLayerElement extends HudElement {
         w = 240; h = 38;
         String key = com.example.examplemod.ClientKeybinds.BLUEPRINT_BUILD == null ? "G"
                 : com.example.examplemod.ClientKeybinds.BLUEPRINT_BUILD.getTranslatedKeyMessage().getString();
-        long now = net.minecraft.Util.getMillis();
-        if (now >= nextCounterUpdate || shownActive != feature.lazyBuilder.active()) {
-            shownConfirmed = feature.lazyBuilder.confirmed();
-            shownActive = feature.lazyBuilder.active();
-            nextCounterUpdate = now + 1000;
-        }
-        lazy = feature.lazyBuild.get() ? (feature.lazyBuilder.active() ? "Lazy an · " + key + ": Stopp · " + shownConfirmed + " bestätigt"
-                : "Lazy aus · " + key + ": Start") : null;
-        lazyDetail = feature.lazyBuilder.displayStatus();
+        boolean running = feature.lazyBuilder.active();
+        lazy = feature.lazyBuild.get() ? (running ? "Lazy-Bauen läuft · " + key + ": Stopp" : "Lazy-Bauen · " + key + ": Start") : null;
+        // Statt eines Zählers: was noch zu tun ist (ruhiger Wert der Ebenenanzeige) oder warum es gerade nicht weitergeht.
+        String hint = feature.lazyBuilder.displayStatus();
+        if (hint != null) lazyDetail = hint;
+        else if (!running) lazyDetail = "Setzt fehlende Blöcke in deiner Nähe";
+        else if (progress != null && progress.checked() && progress.unknown() == 0) {
+            int left = Math.max(0, progress.total() - progress.correct());
+            lazyDetail = left == 0 ? "Ebene fertig" : "Noch " + left + (left == 1 ? " Block" : " Blöcke") + " auf dieser Ebene";
+        } else lazyDetail = "Setzt Blöcke in Reichweite";
         if (lazy != null) { w = 280; h += 26; }
     }
     @Override public void render(GuiGraphics g, Minecraft mc, boolean editing, float delta) {

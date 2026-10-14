@@ -104,6 +104,7 @@ public class Hud extends Module {
             values.add(element.anchorY);
             values.add(element.offsetX);
             values.add(element.offsetY);
+            values.add(element.scale);
             layout.add(element.id, values);
         }
         json.add("layout", layout);
@@ -121,6 +122,10 @@ public class Hud extends Module {
             element.anchorY = values.get(1).getAsFloat();
             element.offsetX = values.get(2).getAsInt();
             element.offsetY = values.get(3).getAsInt();
+            // Fünfter Wert (Größe) ist optional; ältere Konfigurationen behalten 100 %.
+            element.setScale(values.size() > 4 ? values.get(4).getAsFloat() : 1F);
+            // Fünfter Wert (Größe) ist optional; ältere Konfigurationen behalten 100 %.
+            element.setScale(values.size() > 4 ? values.get(4).getAsFloat() : 1F);
         }
     }
 }

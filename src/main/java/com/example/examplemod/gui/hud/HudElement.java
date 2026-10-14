@@ -19,8 +19,18 @@ public abstract class HudElement {
 
     public float anchorX, anchorY;
     public int offsetX, offsetY;
-    /** Zuletzt berechnete Lage, für den Editor. */
+    /** Größe im HUD-Editor (Ecke ziehen), 50–250 %. */
+    public static final float MIN_SCALE = 0.5F, MAX_SCALE = 2.5F;
+    public float scale = 1F;
+    /**
+     * Zuletzt berechnete Lage, für den Editor. Nach {@link #place} in Bildschirm-Koordinaten (skaliert);
+     * während {@link #render} lokal: x/y = 0 und w/h ungeskaliert.
+     */
     public int x, y, w, h;
+    /** Ungeskalierte Größe aus {@link #measure}. */
+    public int baseW, baseH;
+    /** Gerade ohne Inhalt (im Editor nur als Platzhalter). */
+    public boolean empty;
 
     protected HudElement(String id, String name, Setting.Bool visible, float anchorX, float anchorY, int offsetX, int offsetY) {
         metric = com.example.examplemod.performance.PerformanceMonitor.INSTANCE.metric(name,
@@ -40,7 +50,36 @@ public abstract class HudElement {
         anchorY = defaultAnchorY;
         offsetX = defaultOffsetX;
         offsetY = defaultOffsetY;
+        scale = 1F;
     }
+
+    public void setScale(float value) {
+        scale = Float.isFinite(value) ? Math.max(MIN_SCALE, Math.min(MAX_SCALE, value)) : 1F;
+    }
+
+    /** Messen, auf {@link #scale} umrechnen und anordnen; danach gelten x/y/w/h auf dem Bildschirm. */
+    public void place(Minecraft mc, int screenW, int screenH, boolean editing) {
+        measure(mc, editing);
+        baseW = w; baseH = h;
+        empty = w <= 0 || h <= 0;
+        if (!empty) { w = Math.round(baseW * scale); h = Math.round(baseH * scale); }
+        layout(mc, screenW, screenH, editing);
+    }
+
+    /** Zeichnet nach {@link #place} vergrößert/verkleinert; das Element selbst rechnet ungeskaliert ab 0/0. */
+    public void draw(GuiGraphics g, Minecraft mc, boolean editing, float delta) {
+        int sx = x, sy = y, sw = w, sh = h;
+        g.pose().pushMatrix();
+        g.pose().translate(sx, sy);
+        if (scale != 1F) g.pose().scale(scale, scale);
+        x = 0; y = 0; w = baseW; h = baseH;
+        try { render(g, mc, editing, delta); }
+        finally { g.pose().popMatrix(); x = sx; y = sy; w = sw; h = sh; }
+    }
+
+    /** Mausposition in ungeskalierte Element-Koordinaten (0/0 = linke obere Ecke). */
+    public double localX(double mouseX) { return (mouseX - x) / scale; }
+    public double localY(double mouseY) { return (mouseY - y) / scale; }
 
     public boolean isVisible() { return visible.get(); }
     public void toggleVisible() { visible.toggle(); }

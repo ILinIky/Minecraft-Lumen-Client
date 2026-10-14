@@ -50,13 +50,15 @@ public final class LazyBuilder {
 
     public LazyBuilder(Blueprints feature) { this.feature = feature; }
     public String status() { return status; }
-    /** Normal submission/acknowledgement cycles share one calm HUD message; real pauses stay explicit. */
+    /**
+     * Hinweis fürs HUD, nur wenn der Spieler etwas wissen oder tun muss (Pause, Material fehlt, näher gehen).
+     * {@code null} = läuft normal bzw. ist einfach aus; Setzen, Serverbestätigung und Materialwechsel sind Routine.
+     */
     public String displayStatus() {
-        return active() && (waiting() || status.startsWith("Setze ") || status.endsWith(" Blöcke bestätigt")
-                || status.startsWith("Baumaterial auswählen") || status.startsWith("Warte auf Materialtausch"))
-                ? "Baut · jede Platzierung wird bestätigt" : status;
+        if (!active()) return status.equals("Aus") || status.equals("Bereit") ? null : status;
+        return waiting() || status.equals("Baut") || status.startsWith("Setze ") || status.startsWith("Baumaterial auswählen")
+                || status.startsWith("Warte auf Materialtausch") ? null : status;
     }
-    public int confirmed() { return gate.confirmed(); }
     public boolean waiting() { return gate.state() == LazyBuildGate.State.WAITING; }
     public boolean active() { return gate.active(); }
     private boolean held() { return ClientKeybinds.BLUEPRINT_BUILD != null && ClientKeybinds.BLUEPRINT_BUILD.isDown(); }
@@ -285,7 +287,7 @@ public final class LazyBuilder {
         boolean matches = BlueprintPlan.matches(state, expected);
         gate.acknowledge(matches);
         if (!matches) stop("Server hat die Platzierung nicht bestätigt");
-        else { pending = null; expected = null; status = gate.confirmed() + " Blöcke bestätigt"; }
+        else { pending = null; expected = null; status = "Baut"; }
     }
     public void render(WorldRenderContext context) {
         if (preview == null || !active() || mc.level != sessionLevel) return;
