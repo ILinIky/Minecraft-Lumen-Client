@@ -59,6 +59,11 @@ public final class BlueprintPlan {
     private final int[] correctByLayer;
     private final LayerProgress.Delay layerDelay = new LayerProgress.Delay();
     private LayerProgress layerProgress = new LayerProgress(0, 0, 0, false);
+    /** Shown percentage changes at most every 10 s; immediately for a new layer or when it becomes complete. */
+    private final LayerProgress.Display layerDisplay = new LayerProgress.Display(200);
+    /** Layer pass every 2 s: cheap (one layer only) and fast enough for the 30-tick auto-advance delay. */
+    private final LayerProgress.Refresh layerRefresh = new LayerProgress.Refresh(40);
+    private final LayerProgress.Refresh planRefresh = new LayerProgress.Refresh(200);
     private int scannedLayer = -1, layerCursor, layerCorrect, layerUnknown;
     private Layers scannedMode;
     private boolean scannedAuto;
@@ -235,13 +240,27 @@ public final class BlueprintPlan {
         for (Material material : materials) material.correct = 0;
         ignored.stream().forEach(i -> updateStatus(i, Status.CORRECT.ordinal()));
         cursor = 0;
+        planRefresh.reset();
+        layerDisplay.clear();
         resetLayerProgress();
     }
 
+    /** Restarts the measurement; the last shown value stays until the new pass is complete. */
     public void resetLayerProgress() {
         scannedLayer = -1;
         layerDelay.reset();
         layerProgress = new LayerProgress(0, 0, 0, false);
+        layerDisplay.request();
+        layerRefresh.reset();
+    }
+
+    /** Invalidate only if the unloaded chunk overlaps this plan, not for every distant chunk. */
+    public void onChunkUnload(int x, int z) {
+        var transform = transform();
+        if (x < (origin.getX() >> 4) || x > ((origin.getX() + transform.width() - 1) >> 4)
+                || z < (origin.getZ() >> 4) || z > ((origin.getZ() + transform.depth() - 1) >> 4)) return;
+        resetLayerProgress();
+        planRefresh.reset();
     }
 
     public LayerProgress layerProgress() {
@@ -249,16 +268,26 @@ public final class BlueprintPlan {
                 : new LayerProgress(layerCells[Math.max(0, Math.min(layerCells.length - 1, layer))].size(), 0, 0, false);
     }
 
+    /** Last complete pass for presentation only; never used to authorize building or advancement. */
+    public LayerProgress displayedLayerProgress() {
+        LayerProgress shown = layerDisplay.get(layer, layers);
+        return shown != null ? shown : layerProgress();
+    }
+
     /** Priority comparison of the selected layer, sharing the existing status/material accounting. */
     private void scanLayer(ClientLevel level, boolean auto) {
         scanTick++;
         if (layers == Layers.ALL || focus != null) { resetLayerProgress(); return; }
-        if (scannedLayer != layer || scannedMode != layers || scannedAuto != auto) {
-            scannedLayer = layer; scannedMode = layers; scannedAuto = auto;
+        // A pending placement temporarily blocks automatic advancement, not progress measurement.
+        if (scannedAuto != auto) { scannedAuto = auto; layerDelay.reset(); }
+        if (scannedLayer != layer || scannedMode != layers) {
+            scannedLayer = layer; scannedMode = layers;
             layerCursor = layerCorrect = layerUnknown = 0;
             layerChunks.clear(); layerDelay.reset();
             layerProgress = new LayerProgress(layerCells[layer].size(), 0, 0, false);
+            layerRefresh.reset();
         }
+        if (layerCursor == 0 && !layerRefresh.ready(scanTick)) return;
         IntArrayList cells = layerCells[layer];
         int end = Math.min(cells.size(), layerCursor + 512);
         while (layerCursor < end) {
@@ -276,6 +305,8 @@ public final class BlueprintPlan {
                 net.minecraft.world.level.ChunkPos.getX(key), net.minecraft.world.level.ChunkPos.getZ(key)));
         layerProgress = loaded ? new LayerProgress(cells.size(), Math.min(layerCorrect, correctByLayer[layer]), layerUnknown, true)
                 : new LayerProgress(cells.size(), 0, cells.size(), true);
+        layerDisplay.offer(layerProgress, layer, layers, scanTick);
+        layerRefresh.completed(scanTick);
         if (auto && layerDelay.ready(layerProgress, scanTick) && layer + 1 < layerCells.length) {
             layer++;
             resetLayerProgress();
@@ -439,12 +470,13 @@ public final class BlueprintPlan {
         if (!inDimension(level)) { resetLayerProgress(); return; }
         if (lastLevel != level) { lastLevel = level; resetComparison(); }
         scanLayer(level, autoLayer);
-        int budget = Math.min(1488, status.length);
+        if (cursor == 0 && !planRefresh.ready(scanTick)) return;
+        int budget = Math.min(1488, status.length - cursor);
         for (int n = 0; n < budget; n++) {
             int i = cursor++;
-            if (cursor == status.length) cursor = 0;
             update(level, i);
         }
+        if (cursor == status.length) { cursor = 0; planRefresh.completed(scanTick); }
     }
 
     private void update(ClientLevel level, int i) {

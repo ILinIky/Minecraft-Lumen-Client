@@ -50,6 +50,12 @@ public final class LazyBuilder {
 
     public LazyBuilder(Blueprints feature) { this.feature = feature; }
     public String status() { return status; }
+    /** Normal submission/acknowledgement cycles share one calm HUD message; real pauses stay explicit. */
+    public String displayStatus() {
+        return active() && (waiting() || status.startsWith("Setze ") || status.endsWith(" Blöcke bestätigt")
+                || status.startsWith("Baumaterial auswählen") || status.startsWith("Warte auf Materialtausch"))
+                ? "Baut · jede Platzierung wird bestätigt" : status;
+    }
     public int confirmed() { return gate.confirmed(); }
     public boolean waiting() { return gate.state() == LazyBuildGate.State.WAITING; }
     public boolean active() { return gate.active(); }

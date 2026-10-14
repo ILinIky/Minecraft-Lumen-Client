@@ -243,7 +243,7 @@ public class ClientEvents {
         var pos = event.getChunk().getPos();
         ModuleManager.FARM_TRACKER.onChunkUnload(pos.x, pos.z);
         var plan = ModuleManager.BLUEPRINTS.plan();
-        if (plan != null) plan.resetLayerProgress();
+        if (plan != null) plan.onChunkUnload(pos.x, pos.z);
     }
 
     @SubscribeEvent

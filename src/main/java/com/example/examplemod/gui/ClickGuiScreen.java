@@ -3,6 +3,7 @@ package com.example.examplemod.gui;
 import com.example.examplemod.ClientKeybinds;
 import com.example.examplemod.ExampleMod;
 import com.example.examplemod.blueprint.BlueprintPlan;
+import com.example.examplemod.gui.hud.HudEditorScreen;
 import com.example.examplemod.module.Category;
 import com.example.examplemod.module.Module;
 import com.example.examplemod.module.ModuleManager;
@@ -128,8 +129,12 @@ public class ClickGuiScreen extends ClientScreen {
         }
 
         // Werkzeuge mit eigenem Fenster; nur zeigen, wenn sie nicht in die Kategorien ragen.
-        int toolsY = sy + sh - 110;
+        // HUD anordnen nur mit genug Platz; sonst bleibt es im Modul HUD erreichbar.
+        boolean hudTool = sy + sh - 132 >= y + 4;
+        int toolsY = sy + sh - (hudTool ? 132 : 110);
         if (toolsY >= y + 4) UiRender.scaledText(g, font, "WERKZEUGE", sx + 12, toolsY + 4, Theme.TEXT_MUTED, 0.75F);
+        if (hudTool) button(g, mouseX, mouseY, sx + 6, sy + sh - 110, SIDEBAR_W - 12, 18, "⇲ HUD anordnen", Style.SECONDARY,
+                () -> minecraft.setScreen(new HudEditorScreen(this)));
         BlueprintPlan plan = ModuleManager.BLUEPRINTS == null ? null : ModuleManager.BLUEPRINTS.plan();
         String blueprints = "⌂ Baupläne";
         if (plan != null) {

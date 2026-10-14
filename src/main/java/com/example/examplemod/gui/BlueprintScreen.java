@@ -485,7 +485,7 @@ public final class BlueprintScreen extends ClientScreen {
                 });
         y += 26;
         if (plan.layers != BlueprintPlan.Layers.ALL) {
-            var progress = plan.layerProgress();
+            var progress = plan.displayedLayerProgress();
             String progressText = "Ebene " + (plan.layer + 1) + "/" + data.sizeY() + " – " + progress.percent() + " %"
                     + (!progress.checked() ? " · wird geprüft" : progress.unknown() > 0 ? " · ungeprüfte Blöcke" : "");
             g.drawString(font, UiRender.ellipsize(font, progressText, w), x, y, Theme.TEXT_DIM, false);
