@@ -48,6 +48,7 @@ public final class HudRenderer {
         for (HudElement element : hud.elements()) {
             if (!(element instanceof MaterialListElement list) || !element.isVisible()) continue;
             if (element.h <= 0 || !com.example.examplemod.gui.UiRender.inside(mouseX, mouseY, element.x, element.y, element.w, element.h)) return false;
+            if (button == 0 && list.toggleAt(mouseX, mouseY)) { feature.toggleLayerOnly(); return true; }
             com.example.examplemod.feature.MaterialList.Row row = list.rowAt(mouseX, mouseY);
             if (row == null) {
                 if (feature.solo() == null) return false;
@@ -58,10 +59,8 @@ public final class HudRenderer {
             List<HudMenu.Entry> entries = new ArrayList<>();
             boolean solo = feature.solo() == row.item();
             entries.add(new HudMenu.Entry(solo ? "Alle anzeigen" : "Nur diesen anzeigen", () -> ModuleManager.BLUEPRINTS.focusItem(solo ? null : row.item())));
-            // Materialien des geladenen Bauplans lassen sich direkt im ganzen Plan ersetzen.
-            if (ModuleManager.BLUEPRINTS.usesMaterial(row.item())) {
-                entries.add(new HudMenu.Entry("Ersetzen …", () -> ModuleManager.BLUEPRINTS.openReplace(null, row.item())));
-            }
+            // Bauplan-Materialien im ganzen Plan ersetzen, eigene Einträge nur in der Liste.
+            entries.add(new HudMenu.Entry("Ersetzen …", () -> feature.openReplace(null, row.item())));
             entries.add(new HudMenu.Entry("In die Hand nehmen", () -> ModuleManager.BLUEPRINTS.takeIntoHand(row.item(), null)));
             if (ModuleManager.CHEST_MEMORY != null && ModuleManager.CHEST_MEMORY.isEnabled()) {
                 entries.add(new HudMenu.Entry("In Kisten suchen", () -> mc.setScreen(new ChestSearchScreen(null, row.name()))));

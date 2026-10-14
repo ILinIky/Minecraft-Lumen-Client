@@ -333,6 +333,18 @@ public final class BlueprintPlan {
         }
         return amount;
     }
+    /** Offener Bedarf der gewählten Ebene je Item: alles, was dort noch nicht richtig steht (ungeprüft zählt mit). */
+    public Map<Item, Integer> remainingOnLayer() {
+        Map<Item, Integer> result = new LinkedHashMap<>();
+        if (layer < 0 || layer >= layerCells.length) return result;
+        for (int i : layerCells[layer]) {
+            if (ignored.get(i) || status[i] == Status.CORRECT.ordinal()) continue;
+            int state = blueprint.cells().get(i).state();
+            Material material = materialByState[state];
+            if (material != null && material.item != Items.AIR) result.merge(material.item, units[state], Integer::sum);
+        }
+        return result;
+    }
     public boolean inDimension(ClientLevel level) { return level != null && level.dimension().location().toString().equals(dimension); }
     /** Mit gewähltem Material gelten alle Ebenen, damit jede Stelle dieses Materials zu sehen ist. */
     public boolean visibleLayer(int y) {

@@ -567,8 +567,13 @@ public final class Blueprints extends Module {
         mc.setScreen(new com.example.examplemod.gui.ItemPickerScreen(parent,
                 "Ersatz für " + new ItemStack(material).getHoverName().getString(),
                 item -> item instanceof net.minecraft.world.item.BlockItem,
-                item -> replaceDisplayedMaterial(expected, material,
-                        net.minecraft.core.registries.BuiltInRegistries.BLOCK.getKey(((net.minecraft.world.item.BlockItem) item).getBlock()).toString())));
+                item -> {
+                    replaceDisplayedMaterial(expected, material,
+                            net.minecraft.core.registries.BuiltInRegistries.BLOCK.getKey(((net.minecraft.world.item.BlockItem) item).getBlock()).toString());
+                    // Eigener Sammelziel-Eintrag für dasselbe Material wandert mit, sonst bliebe das alte Item gelistet.
+                    var list = ModuleManager.MATERIAL_LIST;
+                    if (plan != expected && list != null && list.isManual(material)) list.replace(material, item);
+                }));
     }
 
     public void resetMaterials() { if (plan != null && !replacements.isEmpty()) applyReplacements(java.util.Map.of()); }

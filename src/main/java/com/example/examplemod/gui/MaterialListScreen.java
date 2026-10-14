@@ -29,6 +29,7 @@ public final class MaterialListScreen extends ClientScreen {
         String state = !feature.followPlan.get() ? "Bauplan-Verknüpfung ist aus."
                 : plan == null ? "Verknüpft: wartet auf einen Bauplan."
                 : (!ModuleManager.BLUEPRINTS.isEnabled() || !plan.inDimension(minecraft.level)) ? "Bauplan: letzter Abgleich (pausiert / andere Dimension)."
+                : feature.showingLayer() ? "Bauplan: offener Bedarf von Ebene " + (plan.layer + 1) + " · im HUD auf Alle umschaltbar."
                 : "Bauplan: offener Bedarf; ungeprüfte Blöcke zählen mit.";
         g.drawString(font, UiRender.ellipsize(font, state, w), x, winY + 78, Theme.TEXT_DIM, false);
         int top = winY + 96, h = Math.max(1, winH - 130);
@@ -40,10 +41,12 @@ public final class MaterialListScreen extends ClientScreen {
             int own = feature.manual().getOrDefault(id, 0);
             button(g, mx, my, x, y, w, 33, "", Style.SECONDARY,
                     () -> minecraft.setScreen(new MaterialAmountScreen(this, row.item(), own > 0 ? own : row.target())));
+            // Eigener Knopf rechts; später registriert, hat also Vorrang vor dem Zeilenklick.
+            button(g, mx, my, x + w - 72, y + 8, 66, 17, "Ersetzen", Style.SECONDARY, () -> feature.openReplace(this, row.item()));
             g.renderItem(new net.minecraft.world.item.ItemStack(row.item()), x + 5, y + 8);
-            g.drawString(font, UiRender.ellipsize(font, row.name() + " · " + row.have() + "/" + row.target(), w - 34), x + 27, y + 5,
+            g.drawString(font, UiRender.ellipsize(font, row.name() + " · " + row.have() + "/" + row.target(), w - 110), x + 27, y + 5,
                     row.missing() == 0 ? Theme.ACCENT_2 : Theme.TEXT, false);
-            g.drawString(font, UiRender.ellipsize(font, "Fehlt " + row.missing() + (own > 0 ? " · eigenes Ziel " + own : " · aus Bauplan") + " · Klick: bearbeiten", w - 34), x + 27, y + 19, Theme.TEXT_MUTED, false);
+            g.drawString(font, UiRender.ellipsize(font, "Fehlt " + row.missing() + (own > 0 ? " · eigenes Ziel " + own : " · aus Bauplan") + " · Klick: bearbeiten", w - 110), x + 27, y + 19, Theme.TEXT_MUTED, false);
         }
         if (rows.isEmpty()) g.drawString(font, "Item hinzufügen oder einen Bauplan verknüpfen.", x + 6, top + 12, Theme.TEXT_MUTED, false);
         popClip(g); scrollbar(g, scroll, winX + winW - 12, top, h, rows.size() * 36);

@@ -12,15 +12,28 @@ import java.util.List;
 public final class MaterialListElement extends HudElement {
     private List<MaterialList.Row> rows = List.of();
     private int shown;
+    private boolean toggle;
+    private String layerLabel = "Ebene";
+    /** Lage des Umschalters in Element-Koordinaten. */
+    private int toggleX, layerW, allW;
     private final ListViewport viewport = new ListViewport();
     public MaterialListElement(Setting.Bool visible) { super("material_list", "Sammelliste", visible, 0, .5F, 4, 0); }
     @Override public void measure(Minecraft mc, boolean editing) {
         var feature = ModuleManager.MATERIAL_LIST;
         rows = feature.isEnabled() ? feature.hudRows() : List.of();
+        toggle = feature.isEnabled() && feature.layerAvailable();
+        var plan = ModuleManager.BLUEPRINTS.plan();
+        layerLabel = plan == null ? "Ebene" : "Ebene " + (plan.layer + 1);
         shown = Math.min(rows.size(), Math.min(feature.hudRows.getInt(), Math.max(1, (mc.getWindow().getGuiScaledHeight() - 52) / 25)));
         viewport.resize(rows.size(), shown);
         w = Math.min(240, mc.getWindow().getGuiScaledWidth() - 8);
-        h = rows.isEmpty() ? (editing ? 38 : 0) : 22 + shown * 25 + (rows.size() > shown ? 14 : 0);
+        // Mit Umschalter bleibt die Liste auch leer sichtbar, damit man zurück auf "Alle" kann.
+        h = rows.isEmpty() ? (editing || toggle ? 36 : 0) : 22 + shown * 25 + (rows.size() > shown ? 14 : 0);
+    }
+
+    /** Klick auf den Umschalter Ebene/Alle (Lage vom letzten Bild). */
+    public boolean toggleAt(double mouseX, double mouseY) {
+        return toggle && UiRender.inside(localX(mouseX), localY(mouseY), toggleX, 3, layerW + allW, 13);
     }
     public boolean scroll(double delta) { return viewport.scroll(delta); }
 
@@ -34,12 +47,28 @@ public final class MaterialListElement extends HudElement {
     @Override public void render(GuiGraphics g, Minecraft mc, boolean editing, float dt) {
         UiRender.roundRect(g, x, y, w, h, 4, Theme.HUD_BG);
         g.drawString(mc.font, "Sammelliste", x + 6, y + 6, Theme.ACCENT, false);
+        int right = x + w - 6;
+        if (toggle) {
+            // Umschalter oben rechts: Bedarf der gewählten Ebene oder des ganzen Bauplans (Klick bei offenem Chat).
+            boolean layer = ModuleManager.MATERIAL_LIST.layerOnly.get();
+            layerW = mc.font.width(layerLabel) + 10; allW = mc.font.width("Alle") + 10;
+            toggleX = w - 6 - layerW - allW;
+            UiRender.roundRect(g, x + toggleX, y + 3, layerW + allW, 13, 3, Theme.CARD);
+            UiRender.roundRect(g, x + toggleX + (layer ? 0 : layerW), y + 3, layer ? layerW : allW, 13, 3, Theme.ACCENT);
+            g.drawString(mc.font, layerLabel, x + toggleX + 5, y + 6, layer ? Theme.ON_ACCENT : Theme.TEXT_DIM, false);
+            g.drawString(mc.font, "Alle", x + toggleX + layerW + 5, y + 6, layer ? Theme.TEXT_DIM : Theme.ON_ACCENT, false);
+            right = x + toggleX - 6;
+        }
         if (ModuleManager.MATERIAL_LIST.solo() != null) {
             // Nur ein Eintrag gezeigt: kleiner Hinweis, Klick im Chat zeigt wieder alle.
             String all = "Alle (" + ModuleManager.MATERIAL_LIST.rows().size() + ") ✕";
-            g.drawString(mc.font, all, x + w - mc.font.width(all) - 6, y + 6, Theme.TEXT_DIM, false);
+            g.drawString(mc.font, all, right - mc.font.width(all), y + 6, Theme.TEXT_DIM, false);
         }
-        if (rows.isEmpty()) g.drawString(mc.font, "Stein: 128/320", x + 6, y + 20, Theme.TEXT, false);
+        if (rows.isEmpty()) {
+            if (editing) g.drawString(mc.font, "Stein: 128/320", x + 6, y + 20, Theme.TEXT, false);
+            else g.drawString(mc.font, ModuleManager.MATERIAL_LIST.showingLayer() ? "Auf dieser Ebene fehlt nichts" : "Nichts offen",
+                    x + 6, y + 22, Theme.TEXT_DIM, false);
+        }
         for (int i = 0; i < shown; i++) {
             var row = rows.get(viewport.offset() + i); int ry = y + 22 + i * 25;
             g.renderItem(row.icon(), x + 5, ry + 1);
