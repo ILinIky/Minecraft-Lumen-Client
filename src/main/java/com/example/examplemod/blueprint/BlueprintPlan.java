@@ -5,6 +5,7 @@ import it.unimi.dsi.fastutil.longs.Long2ObjectOpenHashMap;
 import it.unimi.dsi.fastutil.ints.IntArrayList;
 import net.minecraft.client.multiplayer.ClientLevel;
 import net.minecraft.core.BlockPos;
+import net.minecraft.core.Direction;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.item.Item;
@@ -13,6 +14,19 @@ import net.minecraft.world.item.Items;
 import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.Mirror;
 import net.minecraft.world.level.block.Rotation;
+import net.minecraft.world.level.block.LanternBlock;
+import net.minecraft.world.level.block.CeilingHangingSignBlock;
+import net.minecraft.world.level.block.SporeBlossomBlock;
+import net.minecraft.world.level.block.HangingRootsBlock;
+import net.minecraft.world.level.block.CaveVinesBlock;
+import net.minecraft.world.level.block.CaveVinesPlantBlock;
+import net.minecraft.world.level.block.WeepingVinesBlock;
+import net.minecraft.world.level.block.WeepingVinesPlantBlock;
+import net.minecraft.world.level.block.PointedDripstoneBlock;
+import net.minecraft.world.level.block.AmethystClusterBlock;
+import net.minecraft.world.level.block.BellBlock;
+import net.minecraft.world.level.block.state.properties.AttachFace;
+import net.minecraft.world.level.block.state.properties.BellAttachType;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.block.state.properties.BedPart;
 import net.minecraft.world.level.block.state.properties.BlockStateProperties;
@@ -56,6 +70,8 @@ public final class BlueprintPlan {
     private final Long2IntOpenHashMap index;
     private final Long2ObjectOpenHashMap<IntArrayList> sections;
     private final IntArrayList[] layerCells;
+    private final int[] partners;
+    private final int[] buildLayers, deferredCounts;
     private final int[] correctByLayer;
     private final LayerProgress.Delay layerDelay = new LayerProgress.Delay();
     private LayerProgress layerProgress = new LayerProgress(0, 0, 0, false);
@@ -76,6 +92,10 @@ public final class BlueprintPlan {
     /** Explicitly removed from this working copy, including empty positions. */
     private final java.util.BitSet ignored = new java.util.BitSet();
     private int acceptedVersion;
+    private final BlueprintAudit audit = new BlueprintAudit(Status.values().length);
+    public BlueprintAudit audit() { return audit; }
+    public void startAudit() { audit.start(status.length); }
+
     private final int[] counts = new int[Status.values().length];
     private BlockPos origin;
     private int turns;
@@ -137,27 +157,50 @@ public final class BlueprintPlan {
         if (unknown > 0) warnings.add(unknown + " unbekannte Blockzustände: violett markiert, nicht als korrekt gewertet.");
         if (previous != null) {
             index = previous.index; sections = previous.sections; paletteCounts = previous.paletteCounts;
-            layerCells = previous.layerCells;
         } else {
             index = new Long2IntOpenHashMap(); sections = new Long2ObjectOpenHashMap<>();
-            layerCells = new IntArrayList[blueprint.sizeY()];
-            for (int y = 0; y < layerCells.length; y++) layerCells[y] = new IntArrayList();
             paletteCounts = new int[paletteSize];
             index.defaultReturnValue(-1);
             for (int i = 0; i < blueprint.cells().size(); i++) {
                 Blueprint.Cell cell = blueprint.cells().get(i);
-                layerCells[cell.y()].add(i);
                 index.put(key(cell.x(), cell.y(), cell.z()), i);
                 sections.computeIfAbsent(key(cell.x() >> 4, cell.y() >> 4, cell.z() >> 4), k -> new IntArrayList()).add(i);
                 paletteCounts[cell.state()]++;
             }
         }
+        BlueprintParts parts = BlueprintParts.create(blueprint,
+                palette -> !unsupported[palette] && original[palette] != null
+                        && original[palette].hasProperty(BlockStateProperties.DOUBLE_BLOCK_HALF),
+                palette -> !unsupported[palette] && needsCeiling(original[palette]),
+                (x, y, z) -> index.get(key(x, y, z)));
+        partners = parts.partners();
+        layerCells = parts.layers();
+        buildLayers = parts.buildLayers();
+        deferredCounts = parts.deferredCounts();
         for (int i = 0; i < paletteSize; i++) materialByState[i].total += paletteCounts[i] * units[i];
         correctByLayer = new int[blueprint.sizeY()];
         materials = materialsById.values().stream().filter(m -> m.total > 0)
                 .sorted(Comparator.comparingInt((Material m) -> m.total).reversed().thenComparing(m -> m.name)).toList();
         status = new byte[blueprint.cells().size()];
         updateRotation();
+    }
+
+    /** Only known upward attachments; never infer a dependency merely from a block's visual shape. */
+    public static boolean needsCeiling(BlockState state) {
+        if (state == null) return false;
+        var block = state.getBlock();
+        if (state.hasProperty(BlockStateProperties.ATTACH_FACE))
+            return state.getValue(BlockStateProperties.ATTACH_FACE) == AttachFace.CEILING;
+        if (block instanceof LanternBlock) return state.getValue(BlockStateProperties.HANGING);
+        if (block instanceof BellBlock) return state.getValue(BellBlock.ATTACHMENT) == BellAttachType.CEILING;
+        if (block instanceof PointedDripstoneBlock)
+            return state.getValue(BlockStateProperties.VERTICAL_DIRECTION) == Direction.DOWN;
+        if (block instanceof AmethystClusterBlock)
+            return state.getValue(BlockStateProperties.FACING) == Direction.DOWN;
+        return block instanceof CeilingHangingSignBlock || block instanceof SporeBlossomBlock
+                || block instanceof HangingRootsBlock || block instanceof CaveVinesBlock
+                || block instanceof CaveVinesPlantBlock || block instanceof WeepingVinesBlock
+                || block instanceof WeepingVinesPlantBlock;
     }
 
     private static <T extends Comparable<T>> BlockState applyProperty(BlockState state, Property<T> key, String value) {
@@ -233,6 +276,7 @@ public final class BlueprintPlan {
     }
 
     private void resetComparison() {
+        audit.invalidate();
         Arrays.fill(status, (byte) Status.UNCHECKED.ordinal());
         Arrays.fill(counts, 0);
         Arrays.fill(correctByLayer, 0);
@@ -259,6 +303,7 @@ public final class BlueprintPlan {
         var transform = transform();
         if (x < (origin.getX() >> 4) || x > ((origin.getX() + transform.width() - 1) >> 4)
                 || z < (origin.getZ() >> 4) || z > ((origin.getZ() + transform.depth() - 1) >> 4)) return;
+        audit.invalidate();
         resetLayerProgress();
         planRefresh.reset();
     }
@@ -328,7 +373,9 @@ public final class BlueprintPlan {
         int amount = 0;
         for (int i : layerCells[layer]) {
             var cell = blueprint.cells().get(i);
-            if (!accepted(i) && status(i) == Status.MISSING && materialByState[cell.state()].item == item)
+            if (!ignored(i) && (status(i) == Status.MISSING
+                    || partners[i] >= 0 && status(partners[i]) == Status.MISSING)
+                    && materialByState[cell.state()].item == item)
                 amount += units[cell.state()];
         }
         return amount;
@@ -338,10 +385,11 @@ public final class BlueprintPlan {
         Map<Item, Integer> result = new LinkedHashMap<>();
         if (layer < 0 || layer >= layerCells.length) return result;
         for (int i : layerCells[layer]) {
-            if (ignored.get(i) || status[i] == Status.CORRECT.ordinal()) continue;
+            if (materialComplete(i)) continue;
             int state = blueprint.cells().get(i).state();
             Material material = materialByState[state];
-            if (material != null && material.item != Items.AIR) result.merge(material.item, units[state], Integer::sum);
+            if (material != null && material.item != Items.AIR && units[state] > 0)
+                result.merge(material.item, units[state], Integer::sum);
         }
         return result;
     }
@@ -351,22 +399,40 @@ public final class BlueprintPlan {
         return focus != null || layers == Layers.ALL || (layers == Layers.SINGLE ? y == layer : y <= layer);
     }
 
+    /** A two-block placement remains accessible from either of its occupied layers. */
+    public boolean visibleCell(int i) {
+        return visibleLayer(buildLayers[i])
+                || partners[i] >= 0 && visibleLayer(buildLayers[partners[i]]);
+    }
+
+    public int buildLayer(int i) { return buildLayers[i]; }
+    public boolean onLayer(int i, int selected) {
+        return buildLayers[i] == selected || partners[i] >= 0 && buildLayers[partners[i]] == selected;
+    }
+    public int deferredOnLayer() { return deferredCounts[layer]; }
+
+    private boolean materialComplete(int i) {
+        return status(i) == Status.CORRECT
+                && (partners[i] < 0 || status(partners[i]) == Status.CORRECT);
+    }
+
     /** Neighbor lookup uses the whole rotated plan, so stairs/fences retain their stored shapes. */
     public BlockState stateAt(BlockPos worldPos) {
         int y = worldPos.getY() - origin.getY();
         BlueprintTransform.XZ xz = transform().inverse(worldPos.getX() - origin.getX(), worldPos.getZ() - origin.getZ());
         if (xz.x() < 0 || xz.x() >= blueprint.sizeX() || y < 0 || y >= blueprint.sizeY()
-                || xz.z() < 0 || xz.z() >= blueprint.sizeZ() || !visibleLayer(y)) return null;
+                || xz.z() < 0 || xz.z() >= blueprint.sizeZ()) return null;
         int cell = index.get(key(xz.x(), y, xz.z()));
-        return cell < 0 || ignored.get(cell) ? null : state(blueprint.cells().get(cell));
+        return cell < 0 || !visibleCell(cell) || ignored.get(cell) ? null : state(blueprint.cells().get(cell));
     }
     /** Index der Bauplan-Zelle an dieser Weltposition (nur sichtbare Ebenen), sonst -1. */
     public int cellAt(BlockPos worldPos) {
         int y = worldPos.getY() - origin.getY();
         BlueprintTransform.XZ xz = transform().inverse(worldPos.getX() - origin.getX(), worldPos.getZ() - origin.getZ());
         if (xz.x() < 0 || xz.x() >= blueprint.sizeX() || y < 0 || y >= blueprint.sizeY()
-                || xz.z() < 0 || xz.z() >= blueprint.sizeZ() || !visibleLayer(y)) return -1;
-        return index.get(key(xz.x(), y, xz.z()));
+                || xz.z() < 0 || xz.z() >= blueprint.sizeZ()) return -1;
+        int cell = index.get(key(xz.x(), y, xz.z()));
+        return cell >= 0 && visibleCell(cell) ? cell : -1;
     }
 
     public Material material(Blueprint.Cell cell) { return materialByState[cell.state()]; }
@@ -421,6 +487,7 @@ public final class BlueprintPlan {
     public int[] ignoredCells() { return ignored.stream().toArray(); }
     public void setIgnored(ClientLevel level, int index, boolean value) {
         if (index < 0 || index >= status.length || ignored.get(index) == value) return;
+        audit.invalidate();
         ignored.set(index, value); acceptedVersion++; resetLayerProgress();
         if (value) updateStatus(index, Status.CORRECT.ordinal());
         else if (level != null && inDimension(level)) update(level, index);
@@ -435,6 +502,7 @@ public final class BlueprintPlan {
     /** Abweichung übernehmen oder zurücknehmen; der Status der Zelle wird sofort neu berechnet. */
     public void setAccepted(ClientLevel level, int cellIndex, boolean value) {
         if (cellIndex < 0 || cellIndex >= status.length || accepted.get(cellIndex) == value) return;
+        audit.invalidate();
         accepted.set(cellIndex, value);
         acceptedVersion++;
         resetLayerProgress();
@@ -459,6 +527,7 @@ public final class BlueprintPlan {
      * Gleicher Block: nur bauliche Eigenschaften vergleichen. Zustände, die sich im Spiel von selbst
      * oder durch Benutzung ändern (Laub-Abstand, Strom, offen/zu, Wachstum), zählen nicht als Fehler.
      */
+    public static boolean comparedProperty(String name) { return !TRANSIENT.contains(name); }
     public static boolean matches(BlockState actual, BlockState expected) {
         if (actual == null || expected == null || actual.getBlock() != expected.getBlock()) return false;
         for (Property<?> property : expected.getProperties()) {
@@ -482,6 +551,10 @@ public final class BlueprintPlan {
         if (!inDimension(level)) { resetLayerProgress(); return; }
         if (lastLevel != level) { lastLevel = level; resetComparison(); }
         scanLayer(level, autoLayer);
+        if (audit.running()) {
+            audit.step(1488, i -> { update(level, i); return status[i]; }, Status.CORRECT.ordinal());
+            return;
+        }
         if (cursor == 0 && !planRefresh.ready(scanTick)) return;
         int budget = Math.min(1488, status.length - cursor);
         for (int n = 0; n < budget; n++) {
@@ -498,16 +571,24 @@ public final class BlueprintPlan {
         Blueprint.Cell cell = blueprint.cells().get(i);
         int previous = status[i];
         if (next == previous) return;
-        if (previous == Status.CORRECT.ordinal()) correctByLayer[cell.y()]--;
-        if (next == Status.CORRECT.ordinal()) correctByLayer[cell.y()]++;
-        if (cell.y() == layer && next != Status.CORRECT.ordinal()) {
+        audit.observedChange(i);
+        int partner = partners[i];
+        int workLayer = buildLayers[i];
+        int partnerLayer = partner < 0 ? -1 : buildLayers[partner];
+        int delta = (next == Status.CORRECT.ordinal() ? 1 : 0) - (previous == Status.CORRECT.ordinal() ? 1 : 0);
+        correctByLayer[workLayer] += delta;
+        if (partnerLayer >= 0 && partnerLayer != workLayer) correctByLayer[partnerLayer] += delta;
+        if ((workLayer == layer || partnerLayer == layer) && next != Status.CORRECT.ordinal()) {
             layerDelay.reset();
             layerProgress = new LayerProgress(layerCells[layer].size(), correctByLayer[layer], 0, false);
         }
+        // Both halves consume one item together; a missing upper half must keep that item open.
+        int materialCell = partner >= 0 && blueprint.cells().get(partner).y() < cell.y() ? partner : i;
+        int state = blueprint.cells().get(materialCell).state();
+        boolean wasComplete = materialComplete(materialCell);
         counts[previous]--; counts[next]++;
-        Material material = materialByState[cell.state()];
-        if (previous == Status.CORRECT.ordinal()) material.correct -= units[cell.state()];
-        if (next == Status.CORRECT.ordinal()) material.correct += units[cell.state()];
         status[i] = (byte) next;
+        boolean nowComplete = materialComplete(materialCell);
+        if (wasComplete != nowComplete) materialByState[state].correct += nowComplete ? units[state] : -units[state];
     }
 }

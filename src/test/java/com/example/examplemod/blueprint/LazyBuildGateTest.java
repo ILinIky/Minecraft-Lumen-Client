@@ -28,6 +28,22 @@ public final class LazyBuildGateTest {
                     "Surface sample stays inside outline bounds for " + face);
         }
         var gate = new LazyBuildGate();
+        for (int y : new int[]{-64, 0, 100}) {
+            var full = new net.minecraft.world.phys.AABB(0, y, 0, 1, y + 1, 1);
+            for (var face : net.minecraft.core.Direction.Plane.HORIZONTAL) {
+                var bottomPoint = LazyBuildGeometry.slabFacePoint(full, face, new net.minecraft.world.phys.Vec3(2, y + 3, 2), y, false);
+                var topPoint = LazyBuildGeometry.slabFacePoint(full, face, new net.minecraft.world.phys.Vec3(2, y - 3, 2), y, true);
+                check(bottomPoint.y > y && bottomPoint.y < y + 0.5, "Bottom slab targets lower half even when eye is above");
+                check(topPoint.y > y + 0.5 && topPoint.y < y + 1, "Top slab targets upper half even when eye is below");
+                var lowerSupport = new net.minecraft.world.phys.AABB(0, y, 0, 1, y + 0.5, 1);
+                check(LazyBuildGeometry.slabFacePoint(lowerSupport, face, eye, y, true) == null, "No fabricated upper surface on a lower slab");
+                check(LazyBuildGeometry.slabFacePoint(lowerSupport, face, eye, y, false) != null, "Adjacent lower slabs remain possible");
+            }
+            check(LazyBuildGeometry.slabFacePoint(full, net.minecraft.core.Direction.UP, eye, y, true) == null,
+                    "Top face cannot place an upper slab");
+            check(LazyBuildGeometry.slabFacePoint(full, net.minecraft.core.Direction.DOWN, eye, y, false) == null,
+                    "Underside cannot place a lower slab");
+        }
         check(!gate.begin(false) && !gate.maySend(0), "Never build without explicit input");
         check(gate.begin(true) && gate.maySend(0), "Explicit explicit input starts session");
         gate.submitted(0, 6);

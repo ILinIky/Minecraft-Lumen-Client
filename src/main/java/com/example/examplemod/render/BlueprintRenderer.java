@@ -83,7 +83,7 @@ public final class BlueprintRenderer {
             for (int n = 0; n < indices.size(); n++) {
                 int i = indices.getInt(n);
                 Blueprint.Cell cell = plan.blueprint.cells().get(i);
-                if (plan.ignored(i) || !plan.visibleLayer(cell.y()) || !plan.focused(cell)) continue;
+                if (plan.ignored(i) || !plan.visibleCell(i) || !plan.focused(cell)) continue;
                 BlockPos pos = plan.position(cell);
                 double d = Vec3.atCenterOf(pos).distanceToSqr(context.cameraPos());
                 if (d > (double) distance * distance || !level.hasChunk(pos.getX() >> 4, pos.getZ() >> 4)) continue;

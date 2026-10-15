@@ -34,6 +34,7 @@ public final class MaterialAmountScreen extends ClientScreen {
             try {
                 int count = Integer.parseInt(value);
                 if (count > MaterialTargets.MAX_AMOUNT) throw new NumberFormatException();
+                ModuleManager.MATERIAL_LIST.followPlan.set(false);
                 ModuleManager.MATERIAL_LIST.set(item, count); ModuleManager.saveNow(); onClose();
             } catch (NumberFormatException e) { Notifications.warning("Sammelziel", "Bitte eine Menge von 0 bis 2.000.000 eingeben"); }
         });

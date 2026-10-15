@@ -9,7 +9,7 @@ import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiGraphics;
 
 public final class BlueprintLayerElement extends HudElement {
-    private String label, detail, lazy, lazyDetail;
+    private String label, detail, hideKey, lazy, lazyDetail;
     private int percent;
     private float barPercent;
     private BlueprintPlan shownPlan;
@@ -28,11 +28,12 @@ public final class BlueprintLayerElement extends HudElement {
         }
         label = plan == null ? "Ebene 3/12 – 87 %" : "Ebene " + (plan.layer + 1) + "/" + plan.blueprint.sizeY()
                 + " – " + (progress.checked() ? percent + " %" : "…");
-        detail = progress == null ? "Automatik an" : !progress.checked() ? "Wird geprüft …"
-                : progress.unknown() > 0 ? progress.unknown() + " unbekannt / ungeladen"
-                : feature.autoLayer.get() ? (progress.complete() ? "Ebene fertig" : "Automatik an") : "Manueller Wechsel";
+        if (progress != null && progress.unknown() > 0) label += " · " + progress.unknown() + " ungeprüft";
+        detail = feature.acceptKeyName() + ": Abweichung übernehmen";
+        var hide = com.example.examplemod.ClientKeybinds.BLUEPRINT_HIDE;
+        hideKey = (hide == null ? "–" : hide.getTranslatedKeyMessage().getString()) + ": Block ausblenden";
         // Fixed widths prevent recentering whenever the number or working status changes.
-        w = 240; h = 38;
+        w = 240; h = 50;
         String key = com.example.examplemod.ClientKeybinds.BLUEPRINT_BUILD == null ? "G"
                 : com.example.examplemod.ClientKeybinds.BLUEPRINT_BUILD.getTranslatedKeyMessage().getString();
         boolean running = feature.lazyBuilder.active();
@@ -55,9 +56,10 @@ public final class BlueprintLayerElement extends HudElement {
         if (Math.abs(percent - barPercent) < 0.05F) barPercent = percent;
         if (barPercent > 0) UiRender.gradientH(g, x + 8, y + 19, Math.round((w - 16) * barPercent / 100), 4, Theme.ACCENT, Theme.ACCENT_2);
         g.drawString(mc.font, UiRender.ellipsize(mc.font, detail, w - 16), x + 8, y + 27, Theme.TEXT_MUTED, false);
+        g.drawString(mc.font, UiRender.ellipsize(mc.font, hideKey, w - 16), x + 8, y + 39, Theme.TEXT_MUTED, false);
         if (lazy != null) {
-            g.drawString(mc.font, UiRender.ellipsize(mc.font, lazy, w - 16), x + 8, y + 40, Theme.ACCENT_2, false);
-            g.drawString(mc.font, UiRender.ellipsize(mc.font, lazyDetail, w - 16), x + 8, y + 52, Theme.TEXT_MUTED, false);
+            g.drawString(mc.font, UiRender.ellipsize(mc.font, lazy, w - 16), x + 8, y + 52, Theme.ACCENT_2, false);
+            g.drawString(mc.font, UiRender.ellipsize(mc.font, lazyDetail, w - 16), x + 8, y + 64, Theme.TEXT_MUTED, false);
         }
     }
 }

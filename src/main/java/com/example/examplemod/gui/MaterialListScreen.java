@@ -18,16 +18,17 @@ public final class MaterialListScreen extends ClientScreen {
     @Override protected void renderContent(GuiGraphics g, int mx, int my, float dt) {
         drawTitle(g, "Sammelliste", "Inventar / Ziel"); int x = winX + 12, w = winW - 28;
         int third = (w - 8) / 3;
-        button(g, mx, my, x, winY + 38, third, 20, "Item hinzufügen", Style.PRIMARY, () -> minecraft.setScreen(new ItemPickerScreen(this,
+        button(g, mx, my, x, winY + 38, third, 20, "Eigenes Ziel", Style.PRIMARY, () -> minecraft.setScreen(new ItemPickerScreen(this,
                 "Material wählen", item -> true, item -> minecraft.setScreen(new MaterialAmountScreen(this, item, 64)))));
-        button(g, mx, my, x + third + 4, winY + 38, third, 20, "Bauplan: " + (feature.followPlan.get() ? "Verknüpft" : "Aus"), Style.SECONDARY,
+        button(g, mx, my, x + third + 4, winY + 38, third, 20, "Quelle: " + (feature.followPlan.get() ? "Bauplan" : "Eigene"), Style.SECONDARY,
                 () -> { feature.followPlan.toggle(); feature.refresh(); });
         button(g, mx, my, x + 2 * (third + 4), winY + 38, third, 20, "HUD: " + (feature.isEnabled() ? "An" : "Aus"), Style.SECONDARY, feature::toggle);
-        String note = "Eigene Ziele bleiben gespeichert. Gleiche Items: größeres Ziel zählt.";
+        String note = "Bauplan und eigene Ziele sind getrennt. Eigene Ziele bleiben gespeichert.";
         g.drawString(font, UiRender.ellipsize(font, note, w), x, winY + 65, Theme.TEXT_MUTED, false);
         var plan = ModuleManager.BLUEPRINTS.plan();
-        String state = !feature.followPlan.get() ? "Bauplan-Verknüpfung ist aus."
-                : plan == null ? "Verknüpft: wartet auf einen Bauplan."
+        String state = !feature.followPlan.get() ? "Eigene Ziele: unabhängig vom geladenen Bauplan."
+                : ModuleManager.BLUEPRINTS.loading() ? "Neuer Bauplan wird geladen …"
+                : plan == null ? "Kein Bauplan geladen · HUD ausgeblendet."
                 : (!ModuleManager.BLUEPRINTS.isEnabled() || !plan.inDimension(minecraft.level)) ? "Bauplan: letzter Abgleich (pausiert / andere Dimension)."
                 : feature.showingLayer() ? "Bauplan: offener Bedarf von Ebene " + (plan.layer + 1) + " · im HUD auf Alle umschaltbar."
                 : "Bauplan: offener Bedarf; ungeprüfte Blöcke zählen mit.";
@@ -38,17 +39,23 @@ public final class MaterialListScreen extends ClientScreen {
         for (int i = Math.max(0, offset / 36); i < Math.min(rows.size(), (offset + h) / 36 + 1); i++) {
             var row = rows.get(i); int y = top + i * 36 - offset;
             String id = BuiltInRegistries.ITEM.getKey(row.item()).toString();
-            int own = feature.manual().getOrDefault(id, 0);
+            int own = feature.followPlan.get() ? 0 : feature.manual().getOrDefault(id, 0);
             button(g, mx, my, x, y, w, 33, "", Style.SECONDARY,
-                    () -> minecraft.setScreen(new MaterialAmountScreen(this, row.item(), own > 0 ? own : row.target())));
+                    () -> {
+                        if (feature.followPlan.get()) feature.openReplace(this, row.item());
+                        else minecraft.setScreen(new MaterialAmountScreen(this, row.item(), own > 0 ? own : row.target()));
+                    });
             // Eigener Knopf rechts; später registriert, hat also Vorrang vor dem Zeilenklick.
             button(g, mx, my, x + w - 72, y + 8, 66, 17, "Ersetzen", Style.SECONDARY, () -> feature.openReplace(this, row.item()));
             g.renderItem(new net.minecraft.world.item.ItemStack(row.item()), x + 5, y + 8);
             g.drawString(font, UiRender.ellipsize(font, row.name() + " · " + row.have() + "/" + row.target(), w - 110), x + 27, y + 5,
                     row.missing() == 0 ? Theme.ACCENT_2 : Theme.TEXT, false);
-            g.drawString(font, UiRender.ellipsize(font, "Fehlt " + row.missing() + (own > 0 ? " · eigenes Ziel " + own : " · aus Bauplan") + " · Klick: bearbeiten", w - 110), x + 27, y + 19, Theme.TEXT_MUTED, false);
+            String detail = feature.followPlan.get()
+                    ? row.target() + " zu verbauen · " + row.missing() + " nachsammeln"
+                    : "Fehlt " + row.missing() + " · eigenes Ziel " + own + " · Klick: Menge ändern";
+            g.drawString(font, UiRender.ellipsize(font, detail, w - 110), x + 27, y + 19, Theme.TEXT_MUTED, false);
         }
-        if (rows.isEmpty()) g.drawString(font, "Item hinzufügen oder einen Bauplan verknüpfen.", x + 6, top + 12, Theme.TEXT_MUTED, false);
+        if (rows.isEmpty()) g.drawString(font, feature.followPlan.get() ? "Kein offener Bedarf des aktuellen Bauplans." : "Über Eigenes Ziel ein Material hinzufügen.", x + 6, top + 12, Theme.TEXT_MUTED, false);
         popClip(g); scrollbar(g, scroll, winX + winW - 12, top, h, rows.size() * 36);
         button(g, mx, my, winX + winW - 100, winY + winH - 26, 88, 18, "Fertig", Style.PRIMARY, this::onClose);
     }

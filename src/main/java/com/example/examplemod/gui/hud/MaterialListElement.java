@@ -66,13 +66,13 @@ public final class MaterialListElement extends HudElement {
         }
         if (rows.isEmpty()) {
             if (editing) g.drawString(mc.font, "Stein: 128/320", x + 6, y + 20, Theme.TEXT, false);
-            else g.drawString(mc.font, ModuleManager.MATERIAL_LIST.showingLayer() ? "Auf dieser Ebene fehlt nichts" : "Nichts offen",
+            else g.drawString(mc.font, ModuleManager.MATERIAL_LIST.followPlan.get() ? "Kein offener Itembedarf" : "Kein Sammelbedarf",
                     x + 6, y + 22, Theme.TEXT_DIM, false);
         }
         for (int i = 0; i < shown; i++) {
             var row = rows.get(viewport.offset() + i); int ry = y + 22 + i * 25;
             g.renderItem(row.icon(), x + 5, ry + 1);
-            String count = row.have() + "/" + row.target();
+            String count = ModuleManager.MATERIAL_LIST.followPlan.get() ? row.target() + " offen" : row.have() + "/" + row.target();
             int cw = mc.font.width(count);
             g.drawString(mc.font, UiRender.ellipsize(mc.font, row.name(), w - cw - 40), x + 26, ry + 2, Theme.TEXT, false);
             g.drawString(mc.font, count, x + w - cw - 10, ry + 2, row.missing() == 0 ? Theme.ACCENT_2 : Theme.TEXT_DIM, false);

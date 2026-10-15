@@ -24,21 +24,39 @@ public final class MaterialList extends Module {
     private List<Row> rows = List.of();
     private List<Row> incomplete = List.of();
     private int ticks;
+    private com.example.examplemod.blueprint.BlueprintPlan rowsPlan;
+    private boolean rowsFollowPlan, rowsLoading;
+    private int rowsLayer;
+    private com.example.examplemod.blueprint.BlueprintPlan.Layers rowsLayers;
     /** Nur dieses Item im HUD zeigen (Rechtsklick-Menü), sonst {@code null}. Wird nicht gespeichert. */
     private Item solo;
 
     public MaterialList() {
         super("material_list", "Sammelliste", "Materialbedarf aus Bauplänen und eigene Sammelziele im HUD", Category.WORLD);
         enabledByDefault();
-        followPlan = add(new Setting.Bool("Bauplan folgen", "Offenen Bedarf des aktuellen Bauplans automatisch anzeigen", false));
+        followPlan = add(new Setting.Bool("Bauplan folgen", "Nur den aktuellen Bauplan zeigen; eigene Ziele bleiben separat gespeichert", false).onChange(this::sourceChanged));
         layerOnly = add(new Setting.Bool("Nur aktuelle Ebene", "Beim Bauen Ebene für Ebene nur den Bedarf der gewählten Ebene zeigen; im HUD oben rechts umschaltbar", true));
-        hideDone = add(new Setting.Bool("Erledigte ausblenden", "Vollständige Einträge im HUD ausblenden", true));
+        hideDone = add(new Setting.Bool("Erledigte ausblenden", "Bauplan: erst fertig gebaute Einträge ausblenden. Eigene Ziele: sobald genug im Inventar ist", true));
         hudRows = add(new Setting.Slider("HUD-Zeilen", "Liste mit Shift + Mausrad oder bei geöffnetem Chat unter dem Mauszeiger scrollen", 6, 3, 12, 1, ""));
         add(new Setting.Action("Sammelliste öffnen", "Items und genaue Zielmengen bearbeiten", () -> mc.setScreen(new MaterialListScreen(mc.screen))));
     }
     public Map<String, Integer> manual() { return Collections.unmodifiableMap(manual); }
-    public List<Row> rows() { return rows; }
+    public List<Row> rows() { ensureSource(); return rows; }
+    private void ensureSource() {
+        var feature = ModuleManager.BLUEPRINTS;
+        var plan = feature.plan();
+        if (rowsPlan != plan || rowsFollowPlan != followPlan.get() || rowsLoading != feature.loading()
+                || plan != null && (rowsLayer != plan.layer || rowsLayers != plan.layers)) sourceChanged();
+    }
+    /** Invalidate immediately on load/unload/mode change, including while this module is disabled. */
+    public void sourceChanged() {
+        solo = null;
+        rows = incomplete = List.of();
+        com.example.examplemod.gui.hud.HudMenu.close();
+        refresh();
+    }
     public List<Row> hudRows() {
+        ensureSource();
         if (solo != null) return rows.stream().filter(r -> r.item() == solo).toList();
         return hideDone.get() ? incomplete : rows;
     }
@@ -46,7 +64,7 @@ public final class MaterialList extends Module {
     /** Umschalter Ebene/Alle nur sinnvoll, wenn die Liste dem Bauplan folgt und dieser Ebene für Ebene zeigt. */
     public boolean layerAvailable() {
         var plan = ModuleManager.BLUEPRINTS.plan();
-        return followPlan.get() && plan != null && plan.layers != com.example.examplemod.blueprint.BlueprintPlan.Layers.ALL;
+        return followPlan.get() && !ModuleManager.BLUEPRINTS.loading() && plan != null && plan.layers != com.example.examplemod.blueprint.BlueprintPlan.Layers.ALL;
     }
     public boolean showingLayer() { return layerOnly.get() && layerAvailable(); }
     public void toggleLayerOnly() { layerOnly.toggle(); refresh(); ModuleManager.markDirty(); }
@@ -81,10 +99,16 @@ public final class MaterialList extends Module {
     }
     /** Ersatz wählen: Bauplan-Material im ganzen Plan, sonst nur den eigenen Listeneintrag. */
     public void openReplace(net.minecraft.client.gui.screens.Screen parent, Item item) {
-        if (ModuleManager.BLUEPRINTS.usesMaterial(item)) { ModuleManager.BLUEPRINTS.openReplace(parent, item); return; }
+        if (followPlan.get()) {
+            if (!ModuleManager.BLUEPRINTS.loading() && ModuleManager.BLUEPRINTS.usesMaterial(item))
+                ModuleManager.BLUEPRINTS.openReplace(parent, item);
+            return;
+        }
+        if (!isManual(item)) return;
         mc.setScreen(new com.example.examplemod.gui.ItemPickerScreen(parent,
                 "Ersatz für " + new ItemStack(item).getHoverName().getString(), candidate -> candidate != item,
                 candidate -> {
+                    if (followPlan.get() || !isManual(item)) return;
                     replace(item, candidate);
                     com.example.examplemod.gui.Notifications.success("Sammelliste",
                             new ItemStack(candidate).getHoverName().getString() + " statt " + new ItemStack(item).getHoverName().getString());
@@ -104,9 +128,13 @@ public final class MaterialList extends Module {
         ModuleManager.markDirty();
     }
     public void refresh() {
-        if (mc.player == null) { rows = incomplete = List.of(); return; }
-        Map<String, Integer> fromPlan = new LinkedHashMap<>();
         var plan = ModuleManager.BLUEPRINTS.plan();
+        rowsPlan = plan; rowsFollowPlan = followPlan.get(); rowsLoading = ModuleManager.BLUEPRINTS.loading();
+        rowsLayer = plan == null ? -1 : plan.layer; rowsLayers = plan == null ? null : plan.layers;
+        if (mc.player == null || followPlan.get() && (plan == null || rowsLoading)) {
+            rows = incomplete = List.of(); solo = null; return;
+        }
+        Map<String, Integer> fromPlan = new LinkedHashMap<>();
         if (showingLayer()) plan.remainingOnLayer().forEach((item, amount) ->
                 fromPlan.merge(BuiltInRegistries.ITEM.getKey(item).toString(), amount, Integer::sum));
         else if (followPlan.get() && plan != null) for (var material : plan.materials) {
@@ -120,7 +148,7 @@ public final class MaterialList extends Module {
             if (!stack.isEmpty()) inventory.merge(stack.getItem(), stack.getCount(), Integer::sum);
         }
         List<Row> next = new ArrayList<>();
-        MaterialTargets.combine(manual, fromPlan).forEach((id, amount) -> {
+        MaterialTargets.select(followPlan.get(), manual, fromPlan).forEach((id, amount) -> {
             ResourceLocation key = ResourceLocation.tryParse(id);
             if (key == null || !BuiltInRegistries.ITEM.containsKey(key)) return;
             Item item = BuiltInRegistries.ITEM.getValue(key);
@@ -131,7 +159,7 @@ public final class MaterialList extends Module {
         });
         next.sort(Comparator.comparing((Row r) -> r.missing() == 0).thenComparing(Row::name));
         rows = List.copyOf(next);
-        incomplete = rows.stream().filter(r -> r.missing() > 0).toList();
+        incomplete = rows.stream().filter(r -> MaterialTargets.outstanding(followPlan.get(), r.target(), r.have())).toList();
         // Verschwindet das einzeln gezeigte Item aus der Liste, wieder alle zeigen (sonst wäre das HUD leer).
         if (solo != null && rows.stream().noneMatch(r -> r.item() == solo)) solo = null;
     }

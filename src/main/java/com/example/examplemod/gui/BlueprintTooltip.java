@@ -72,6 +72,9 @@ public final class BlueprintTooltip {
         }
 
         BlockState actual = mc.level.getBlockState(hover.pos());
+        if (plan.buildLayer(hover.index()) != cell.y()) {
+            stock.add(new Line("Mit Befestigung auf Ebene " + (plan.buildLayer(hover.index()) + 1), Theme.TEXT_MUTED));
+        }
         switch (hover.status()) {
             case MISSING -> lines.add(new Line("Noch nicht gebaut", hover.status().color));
             case WRONG_BLOCK -> lines.add(new Line("Falscher Block: " + actual.getBlock().getName().getString(), hover.status().color));
@@ -80,15 +83,20 @@ public final class BlueprintTooltip {
             default -> { }
         }
         if (expected != null) {
+            var hint = feature.placementHint();
+            if (hint != null) for (String reason : hint.reasons()) lines.add(new Line(reason, Theme.WARNING));
             boolean compare = hover.status() == BlueprintPlan.Status.WRONG_STATE && actual.getBlock() == expected.getBlock();
+            int propertiesShown = 0;
             for (Property<?> property : expected.getProperties()) {
+                if (!BlueprintPlan.comparedProperty(property.getName())) continue;
                 String label = PROPERTY_NAMES.get(property.getName());
+                if (label == null && compare) label = property.getName();
                 if (label == null) continue;
                 String want = value(expected, property);
                 if (compare) {
                     String have = value(actual, property);
                     if (!have.equals(want)) lines.add(new Line(label + ": " + want + "  (ist " + have + ")", Theme.WARNING));
-                } else if (lines.size() < 4) {
+                } else if (propertiesShown++ < 4) {
                     lines.add(new Line(label + ": " + want, Theme.TEXT_DIM));
                 }
             }

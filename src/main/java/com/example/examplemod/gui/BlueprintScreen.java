@@ -28,7 +28,7 @@ import java.util.Locale;
 
 /** Three focused tabs reuse Lumen's cards, theme, clipping and scrolling at every GUI scale. */
 public final class BlueprintScreen extends ClientScreen {
-    private enum Tab { FILES("Dateien"), PLACEMENT("Platzierung"), MATERIALS("Material"), CAPTURE("Aufnehmen");
+    private enum Tab { FILES("Dateien"), PLACEMENT("Platzierung"), MATERIALS("Material"), REVIEW("Prüfen"), CAPTURE("Aufnehmen");
         final String label;
         Tab(String label) { this.label = label; }
     }
@@ -96,10 +96,10 @@ public final class BlueprintScreen extends ClientScreen {
     @Override protected void renderContent(GuiGraphics g, int mx, int my, float partialTick) {
         BlueprintPlan plan = feature.plan();
         if (plan != seenPlan) {
-            boolean keepMaterials = tab == Tab.MATERIALS && seenPlan != null && plan != null
+            boolean keepMaterials = (tab == Tab.MATERIALS || tab == Tab.REVIEW) && seenPlan != null && plan != null
                     && seenPlan.blueprint.source().equals(plan.blueprint.source());
             seenPlan = plan;
-            select(keepMaterials ? Tab.MATERIALS : plan == null ? Tab.FILES : Tab.PLACEMENT);
+            select(keepMaterials ? tab : plan == null ? Tab.FILES : Tab.PLACEMENT);
         }
         drawTitle(g, "Baupläne", null);
         if (searchTab()) fieldBackground(g, search, 6, 4);
@@ -109,7 +109,7 @@ public final class BlueprintScreen extends ClientScreen {
             int left = winX + 24 + font.width("Baupläne");
             g.drawString(font, UiRender.ellipsize(font, label, winX + winW - 14 - left), left, winY + 11, Theme.TEXT_MUTED, false);
         }
-        int tabW = (winW - 36) / 4;
+        int tabW = (winW - 12 - 4 * Tab.values().length - 12) / Tab.values().length;
         for (Tab value : Tab.values()) button(g, mx, my, winX + 12 + value.ordinal() * (tabW + 4), winY + 38,
                 tabW, 20, value.label, tab == value ? Style.PRIMARY : Style.SECONDARY, () -> select(value));
 
@@ -122,6 +122,7 @@ public final class BlueprintScreen extends ClientScreen {
         else if (tab == Tab.CAPTURE) y = renderCapture(g, mx, my, x, y, w);
         else if (plan == null) y += paragraph(g, "Zuerst unter Dateien einen Bauplan laden.", x, y, w, Theme.TEXT_DIM);
         else if (tab == Tab.PLACEMENT) y = renderPlacement(g, mx, my, x, y, w, plan);
+        else if (tab == Tab.REVIEW) y = renderReview(g, mx, my, x, y, w, plan);
         else y = renderMaterials(g, mx, my, x, y, w, plan);
         popClip(g);
         scroll.setMax(y - start - h);
@@ -133,6 +134,60 @@ public final class BlueprintScreen extends ClientScreen {
         String status = feature.loading() ? feature.message() : plan != null ? summary(plan) : feature.message();
         g.drawString(font, UiRender.ellipsize(font, status, winW - 96), winX + 84, footer + 5, Theme.TEXT_MUTED, false);
         tooltip(g, mx, my, winX + 84, footer, winW - 96, 18, status);
+    }
+
+    private int renderReview(GuiGraphics g, int mx, int my, int x, int y, int w, BlueprintPlan plan) {
+        var audit = plan.audit();
+        button(g, mx, my, x, y, w, 20, !feature.isEnabled() ? "Bauplan aktivieren und prüfen"
+                        : audit.running() ? "Gesamtprüfung läuft · " + audit.percent() + " %" : "Gesamten Bauplan erneut prüfen",
+                Style.PRIMARY, () -> { if (!audit.running() || !feature.isEnabled()) feature.startAudit(); });
+        y += 26;
+        y += paragraph(g, "Automatisch nach Abschluss der letzten Ebene; unabhängig von Ebenen- und Materialfilter. "
+                + "Berücksichtigt akzeptierte Abweichungen und ausgeblendete Stellen.", x, y, w, Theme.TEXT_MUTED) + 6;
+        if (audit.started()) {
+            if (audit.stale()) y += paragraph(g, "Stand veraltet – Welt oder Bauplan verändert. Bitte erneut prüfen.", x, y, w, Theme.WARNING) + 4;
+            int open = 0;
+            for (var status : BlueprintPlan.Status.values()) {
+                if (status == BlueprintPlan.Status.CORRECT) continue;
+                int count = audit.count(status.ordinal()); open += count;
+                if (count > 0) y += paragraph(g, statusLabel(status) + ": " + count, x, y, w, status.color) + 2;
+            }
+            if (!audit.running() && !audit.stale() && open == 0)
+                y += paragraph(g, "Alle Positionen geprüft – Bauplan vollständig erledigt.", x, y, w, Theme.SUCCESS) + 6;
+            if (open > 0) y += paragraph(g, "Reststellen (maximal 64): Anklicken wählt die Bau-Ebene und zeigt die Position im Hinweis.", x, y, w, Theme.TEXT_MUTED) + 4;
+            for (var issue : audit.examples()) {
+                int index = issue.index();
+                var cell = plan.blueprint.cells().get(index);
+                var state = plan.state(cell);
+                String label = (state == null ? "Unbekannter Block" : state.getBlock().getName().getString())
+                        + " · " + plan.position(cell).toShortString() + " · " + statusLabel(BlueprintPlan.Status.values()[issue.status()]);
+                button(g, mx, my, x, y, w, 18, UiRender.ellipsize(font, label, w - 12), Style.SECONDARY,
+                        () -> { feature.showAuditCell(index); select(Tab.PLACEMENT); });
+                tooltip(g, mx, my, x, y, w, 18, label);
+                y += 21;
+            }
+        }
+        y += 8;
+        y += paragraph(g, "Änderungshistorie · letzte 20 Schritte dieser Sitzung", x, y, w, Theme.TEXT) + 6;
+        var history = feature.historyLabels();
+        if (history.isEmpty()) y += paragraph(g, "Noch keine Änderungen. Beim Entladen oder Laden eines Bauplans wird die Historie geleert.", x, y, w, Theme.TEXT_MUTED) + 6;
+        else {
+            y += paragraph(g, "Wird zurückgenommen: " + history.getFirst(), x, y, w, Theme.TEXT_DIM) + 4;
+            button(g, mx, my, x, y, w, 20, "Letzte Änderung rückgängig machen", Style.SECONDARY, feature::undoEdit);
+            y += 26;
+            for (int i = 0; i < history.size(); i++) y += paragraph(g, (i + 1) + ". " + history.get(i), x, y, w, Theme.TEXT_MUTED) + 4;
+        }
+        return y;
+    }
+    private static String statusLabel(BlueprintPlan.Status status) {
+        return switch (status) {
+            case MISSING -> "Fehlende Blöcke";
+            case WRONG_BLOCK -> "Falsche / belegte Blöcke";
+            case WRONG_STATE -> "Falsche Ausrichtung oder Form";
+            case UNCHECKED -> "Ungeladen / nicht prüfbar";
+            case UNSUPPORTED -> "Unbekannte Blockzustände";
+            case CORRECT -> "Erledigt";
+        };
     }
 
     private int renderFiles(GuiGraphics g, int mx, int my, int x, int y, int w) {
@@ -492,8 +547,14 @@ public final class BlueprintScreen extends ClientScreen {
             UiRender.roundRect(g, x, y + 13, w, 4, 2, Theme.CARD);
             if (progress.percent() > 0) UiRender.gradientH(g, x, y + 13, w * progress.percent() / 100, 4, Theme.ACCENT, Theme.ACCENT_2);
             y += 24;
+            if (plan.deferredOnLayer() > 0) {
+                y += paragraph(g, plan.deferredOnLayer() + " Befestigungsblöcke folgen mit ihrer Decke auf einer höheren Ebene.",
+                        x, y, w, Theme.TEXT_MUTED) + 4;
+            }
         }
-        y += paragraph(g, "Automatik gilt für die gewählte Ebene. Bei Alle Ebenen oder Materialfokus pausiert sie.", x, y, w, Theme.TEXT_MUTED) + 4;
+        y += paragraph(g, "Türen und hohe Pflanzen werden mit beiden Hälften geprüft, auch über die Ebenengrenze. "
+                + "Hängende Blöcke gehören zur Ebene ihrer Befestigung. Bei Alle Ebenen oder Materialfokus pausiert die Automatik.",
+                x, y, w, Theme.TEXT_MUTED) + 4;
         button(g, mx, my, x, y, w, 22, "Lazy-Bauen: " + (feature.lazyBuild.get() ? "An" : "Aus"),
                 feature.lazyBuild.get() ? Style.PRIMARY : Style.SECONDARY, () -> {
                     feature.lazyBuild.toggle(); feature.lazyBuilder.cancel();
@@ -533,18 +594,16 @@ public final class BlueprintScreen extends ClientScreen {
         boolean picking = feature.pickBlock.get();
         button(g, mx, my, x + half + 4, y, w - half - 4, 20, UiRender.ellipsize(font, "Mittelklick wählt Block: " + (picking ? "An" : "Aus"), w - half - 12),
                 picking ? Style.PRIMARY : Style.SECONDARY, feature.pickBlock::toggle);
-        tooltip(g, mx, my, x + half + 4, y, w - half - 4, 20, "Mausrad-Klick auf einen noch nicht gebauten Block nimmt das Item aus deinem Inventar "
-                + "in die Hand. Es wird nichts erzeugt. Ist ein echter Block näher, gilt der normale Mittelklick.");
+        tooltip(g, mx, my, x + half + 4, y, w - half - 4, 20, "Mausrad-Klick auf einen noch nicht gebauten Block nimmt das passende Item in die Hand. "
+                + "Kreativ: auch ohne Vorrat. Überleben: nur aus deinem Inventar. Ist ein echter Block näher, gilt der normale Mittelklick.");
         y += 24;
         y = renderKey(g, mx, my, x, y, w, ClientKeybinds.BLUEPRINT_INFO, "Block-Info-Taste", "linkes Alt");
         y = renderKey(g, mx, my, x, y, w, ClientKeybinds.BLUEPRINT_ACCEPT, "Abweichung übernehmen", "N");
         y = renderKey(g, mx, my, x, y, w, ClientKeybinds.BLUEPRINT_HIDE, "Block als erledigt ausblenden", "H");
         y += paragraph(g, "Block anvisieren und Taste drücken: aus der Vorschau entfernen und als erledigt zählen, auch ohne echten Block. "
                 + "Die Taste kann auch auf eine Maus-Seitentaste gelegt werden. Änderungen bleiben je Bauplandatei und Welt gespeichert.", x, y, w, Theme.TEXT_DIM) + 4;
-        if (feature.canUndoHidden()) {
-            button(g, mx, my, x, y, w, 20, "Letztes Ausblenden rückgängig", Style.SECONDARY, feature::undoHidden);
-            y += 24;
-        }
+        button(g, mx, my, x, y, w, 20, "Änderungshistorie und Abschlusskontrolle", Style.SECONDARY, () -> select(Tab.REVIEW));
+        y += 24;
         boolean resetConfirm = resetPlan == plan && System.currentTimeMillis() < resetUntil;
         button(g, mx, my, x, y, w, 20, resetConfirm ? "Original wirklich wiederherstellen?" : "Originalblöcke wiederherstellen (" + plan.ignoredCount() + " ausgeblendet)", Style.SECONDARY, () -> {
             if (resetPlan == plan && System.currentTimeMillis() < resetUntil) { feature.restoreOriginal(); resetPlan = null; }

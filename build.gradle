@@ -315,6 +315,20 @@ tasks.register('blueprintMaterialTest', JavaExec) {
 }
 tasks.named('check') { dependsOn tasks.named('blueprintMaterialTest') }
 
+tasks.register('blueprintPartsTest', JavaExec) {
+    dependsOn tasks.named('testClasses')
+    classpath = sourceSets.test.runtimeClasspath
+    mainClass = 'com.example.examplemod.blueprint.BlueprintPartsTest'
+}
+tasks.named('check') { dependsOn tasks.named('blueprintPartsTest') }
+
+tasks.register('blueprintReviewTest', JavaExec) {
+    dependsOn tasks.named('testClasses')
+    classpath = sourceSets.test.runtimeClasspath
+    mainClass = 'com.example.examplemod.blueprint.BlueprintReviewTest'
+}
+tasks.named('check') { dependsOn tasks.named('blueprintReviewTest') }
+
 tasks.register('playerRadarTest', JavaExec) {
     dependsOn tasks.named('testClasses')
     classpath = sourceSets.test.runtimeClasspath

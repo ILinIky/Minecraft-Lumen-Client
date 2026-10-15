@@ -65,7 +65,7 @@ public final class HudRenderer {
             if (ModuleManager.CHEST_MEMORY != null && ModuleManager.CHEST_MEMORY.isEnabled()) {
                 entries.add(new HudMenu.Entry("In Kisten suchen", () -> mc.setScreen(new ChestSearchScreen(null, row.name()))));
             }
-            if (feature.isManual(row.item())) entries.add(new HudMenu.Entry("Aus Liste entfernen", () -> feature.set(row.item(), 0)));
+            if (!feature.followPlan.get() && feature.isManual(row.item())) entries.add(new HudMenu.Entry("Aus Liste entfernen", () -> feature.set(row.item(), 0)));
             HudMenu.open(entries, mouseX, mouseY);
             return true;
         }

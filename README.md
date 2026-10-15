@@ -51,6 +51,13 @@ Die README beschreibt den aktuellen Quellstand. Welche Funktionen deine installi
 | **Kisten-Gedächtnis** | Inhalte geöffneter Behälter merken, nach Items suchen und zum passenden Lagerplatz navigieren. |
 | **Auto-Abwurf** | Ausgewählte Items abwerfen, optional eine Wunschmenge behalten; gehaltene und wertvolle Items schützen. |
 
+Die Sammelliste hat zwei getrennte Quellen: **Aktueller Bauplan** und **Eigene Ziele**.
+Im Bauplanmodus bleiben offene Materialien auch dann sichtbar, wenn du genug davon im Inventar hast. **„1 offen“** heißt: ein Item ist noch zu verbauen; der Balken zeigt weiterhin deinen Vorrat. Bei eigenen Sammelzielen blendet „Erledigte ausblenden“ Einträge aus, sobald genügend Material im Inventar liegt. Eine leere Materialliste ist kein Nachweis für einen fertigen Bauplan – unbekannte oder nicht als Item erhältliche Blöcke werden über den Ebenenfortschritt und die Abschlusskontrolle geprüft.
+Im Bauplanmodus erscheint nur der Bedarf des einen geladenen Plans. Beim Entladen oder während des Ladens
+verschwindet die Liste; ein neuer Plan ersetzt den bisherigen Bedarf vollständig. Eigene Ziele bleiben separat
+unter **Quelle: Eigene** erhalten. Ein Klick auf eine Bauplan-Zeile ersetzt deren Material, statt ein dauerhaftes
+Sammelziel anzulegen. Über **Eigenes Ziel** legst du bewusst eine unabhängige Zielmenge an.
+
 Die Sammelliste lässt sich mit **Shift + Mausrad** scrollen. Bei offenem Chat geht das auch direkt über der Liste.
 Per Rechtsklick kannst du ein Material allein anzeigen, in die Hand nehmen oder im Kisten-Gedächtnis suchen.
 Bauplan-Materialien lassen sich außerdem für den gesamten Plan ersetzen.
@@ -97,8 +104,14 @@ Alte Blocknamen werden soweit möglich umgewandelt; das alte `.schematic`-Format
 
 - **Vorschau:** Vorschaubilder in der Dateiliste, echte Blocktexturen, einstellbare Deckkraft und Markierungen. Truhen und Schilder haben eigene texturierte Modelle; andere Sonderfälle wie Betten und Flüssigkeiten nutzen eine vereinfachte Darstellung.
 - **Block-Info:** Standardmäßig **linkes Alt halten**. Zeigt Name, Ausrichtung, Inventarbestand und offenen Bedarf. Auch als Umschalter, dauerhaft oder ausgeschaltet nutzbar.
-- **Materialauswahl:** Mittelklick nimmt das passende vorhandene Item in die Hand. Ein Material lässt sich gezielt hervorheben, ersetzen oder in gespeicherten Kisten suchen.
+- **Materialauswahl:** Mittelklick auf einen noch offenen Bauplan-Block nimmt das passende Item in die Hand. Im Kreativmodus erhältst du es auch ohne Vorrat; im Überlebensmodus wird weiterhin nur vorhandenes Material ausgewählt. Ein Material lässt sich gezielt hervorheben, ersetzen oder in gespeicherten Kisten suchen.
 - **Ebenen-Fortschritt:** Kompakte Anzeige wie **„Ebene 3/12 – 87 %“** mit Fortschrittsbalken.
+- **Tasten direkt im HUD:** Unter dem Ebenenbalken stehen die aktuell belegten Tasten für **Abweichung übernehmen** und **Block ausblenden**, auch nach einer eigenen Umbelegung.
+- **Änderungshistorie:** Unter **B → Prüfen** siehst du die letzten 20 Änderungen dieser Sitzung. Ausblenden, akzeptierte Abweichungen, Materialtausch und Zurücksetzen lassen sich Schritt für Schritt rückgängig machen. Vorher steht dort genau, welcher Schritt zurückgenommen wird. Die Historie endet beim Entladen oder Wechseln des Bauplans; die eigentlichen Bauplan-Änderungen bleiben wie bisher gespeichert. Echte Weltblöcke werden dadurch nicht verändert.
+- **Warum geht das nicht?** Die Block-Info nennt fehlendes Material, eine zu große Entfernung, belegte Stellen oder fehlende/ungeeignete Befestigungen. Bei falscher Ausrichtung oder Form stehen Soll und Ist dabei. Erkannte fehlende Befestigungen werden beim Anvisieren kurz gelb umrandet. Die Hinweise nutzen geladene Client-Daten; Serverregeln wie Grundstücksschutz können sie nicht vorhersagen.
+- **Abschlusskontrolle:** Nach dem Abschluss der letzten Bau-Ebene beginnt automatisch eine frische Prüfung des gesamten Bauplans. Unter **B → Prüfen** kannst du sie auch manuell starten. Angezeigt werden fehlende und falsche Blöcke, falsche Ausrichtungen sowie ungeladene und unbekannte Stellen. Die Restliste zeigt bis zu 64 Positionen mit Fehlergrund; Anklicken wählt ihre Bau-Ebene. Die Gesamtzahlen umfassen alle Positionen. Erkannte spätere Änderungen und Chunk-Entladungen markieren die Momentaufnahme als veraltet. Große Pläne werden schrittweise innerhalb des bestehenden Scan-Budgets geprüft.
+- **Blöcke über zwei Ebenen:** Türen und hohe Pflanzen werden auf beiden betroffenen Ebenen vollständig berücksichtigt. Die Vorschau zeigt auch die zugehörige Hälfte außerhalb der gewählten Ebene. Erst beide korrekten oder akzeptierten Hälften schließen die Platzierung ab; der Materialbedarf zählt nur ein Item. Fehlt später eine Hälfte, wird die Platzierung wieder offen. Diese Blöcke setzt du weiterhin manuell.
+- **Befestigung zuerst:** Hängende Laternen, Decken-Hebel und -Knöpfe, Hängeschilder, Glocken an der Decke, Sporenblüten, Hänge-Wurzeln, Höhlen- und Trauerranken sowie nach unten gerichtete Tropfsteine und Amethystknospen/-haufen gehören zur Bau-Ebene ihrer Befestigung. Beispiel: Eine Laterne unter Ebene 2 wird zusammen mit der Decke auf Ebene 2 angezeigt und gezählt. Zusammenhängende hängende Teile folgen ihrer obersten Befestigung. Vorschau, Fortschritt, Ebenen-Materialliste und Lazy-Bauen nutzen diese Zuordnung; die echten Blockpositionen bleiben gleich. Ohne Befestigung im Bauplan bleibt die Stelle auf ihrer ursprünglichen Ebene. Die Block-Info nennt bei verschobenen Aufgaben die Bau-Ebene.
 - **Automatischer Ebenenwechsel:** Optional unter **B → Platzierung**. Ist die Ebene vollständig gebaut oder als erledigt anerkannt, folgt nach kurzer Prüfung die nächste. Unbekannte und ungeladene Stellen verhindern den Wechsel. **Bild ↑ / Bild ↓** funktionieren weiterhin.
 
 ### Lazy-Bauen
@@ -123,7 +136,7 @@ Auch nach einem automatischen Ebenenwechsel startest du mit **G** neu.
 | --- | --- |
 | **N – Abweichung übernehmen** | Einen vorhandenen, anders gesetzten Block akzeptieren. Wird er später abgebaut, gilt die Stelle wieder als fehlend. |
 | **H – Als erledigt ausblenden** | Anvisierte Bauplan-Stelle ausblenden und aus Fortschrittsprüfung und offenem Materialbedarf nehmen, auch wenn dort Luft ist. Kein Weltblock wird gelöscht. |
-| **Letztes Ausblenden rückgängig** | Im aktuellen Baulauf ausgeblendete Stellen einzeln zurückholen. |
+| **B → Prüfen → Letzte Änderung rückgängig machen** | Die letzten 20 Bauplan-Änderungen schrittweise zurücknehmen: Ausblenden, Abweichungen, Materialtausch und Zurücksetzen. |
 | **Originalblöcke wiederherstellen** | Ausblendungen, akzeptierte Abweichungen und Materialtausch zurücksetzen; Platzierung und Ebene behalten. |
 
 **Jede Bauplandatei behält pro Welt/Server ihren eigenen Stand.** Du kannst zwischen A und B wechseln und später mit
@@ -203,7 +216,7 @@ Modultasten legst du im Client-Menü fest; Bauplan-Aktionen auch direkt im Baupl
 | **N** | Bauplan-Abweichung übernehmen oder zurücknehmen |
 | **H** | Bauplan-Stelle als erledigt ausblenden |
 | **G** | Aktiviertes Lazy-Bauen starten/stoppen; nach Materialpause fortsetzen |
-| **Mittelklick** | Vorhandenes Item des anvisierten Bauplan-Blocks auswählen |
+| **Mittelklick** | Bauplan-Block auswählen: Kreativ auch ohne Vorrat, Überleben nur aus dem Inventar |
 | **Shift + Mausrad** | Sammelliste im HUD scrollen |
 | **K** | Kisten-Gedächtnis durchsuchen |
 | **F6** | Wegpunkt-Menü öffnen |

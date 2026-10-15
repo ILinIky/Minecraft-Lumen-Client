@@ -85,7 +85,9 @@ public final class Blueprints extends Module {
     /** Zuletzt gespeicherte Platzierung; bei Änderung wird die Welt-Datei neu geschrieben. */
     private String savedSignature;
     private String sourceHash;
-    private final java.util.ArrayDeque<Integer> hiddenUndo = new java.util.ArrayDeque<>();
+    private final com.example.examplemod.blueprint.BlueprintHistory history = new com.example.examplemod.blueprint.BlueprintHistory();
+    private BlueprintPlan auditPlan;
+    private boolean autoAudited;
 
     /** Platzierung, die beim Wiederherstellen statt "vor dem Spieler" übernommen wird. */
     private record Placement(BlockPos origin, String dimension, int turns, boolean mirrored,
@@ -113,7 +115,7 @@ public final class Blueprints extends Module {
         infoPosition = add(new Setting.Mode("Block-Info-Position", "Wo der Tooltip der Block-Info erscheint",
                 POSITION_TOP, POSITION_TOP, POSITION_CROSSHAIR));
         pickBlock = add(new Setting.Bool("Mittelklick wählt Bauplan-Block",
-                "Mausrad-Klick auf einen noch nicht gebauten Block nimmt das passende Item aus dem Inventar in die Hand, wie Block auswählen im Überlebensmodus",
+                "Mausrad-Klick wählt den Bauplan-Block: im Kreativmodus auch ohne Vorrat, im Überlebensmodus aus dem Inventar",
                 true));
         add(new Setting.Action("Baupläne öffnen", "Datei laden, platzieren und Materialliste ansehen", () -> mc.setScreen(new BlueprintScreen(mc.screen))));
     }
@@ -137,6 +139,7 @@ public final class Blueprints extends Module {
         String fallbackDimension = mc.level.dimension().location().toString();
         BlockPos fallbackAnchor = mc.player.blockPosition().relative(mc.player.getDirection(), 3);
         loading = true;
+        if (ModuleManager.MATERIAL_LIST != null) ModuleManager.MATERIAL_LIST.sourceChanged();
         message = "Lade " + path.getFileName() + " …";
         pending = loader.submit(() -> {
             try {
@@ -190,11 +193,12 @@ public final class Blueprints extends Module {
                         }
                         saveState();
                         plan = loaded;
+                        if (ModuleManager.MATERIAL_LIST != null) ModuleManager.MATERIAL_LIST.sourceChanged();
                         focusItem = null;
                         sourceBlueprint = data;
                         replacements.clear();
                         replacements.putAll(restored);
-                        file = path; sourceHash = fingerprint; savedSignature = null; hiddenUndo.clear();
+                        file = path; sourceHash = fingerprint; savedSignature = null; history.clear();
                         renderer.clear();
                         setEnabled(restoredPlacement == null || restoredPlacement.visible(), false);
                         message = data.cells().size() + " Blöcke geladen · Platzierung prüfen";
@@ -225,15 +229,17 @@ public final class Blueprints extends Module {
     }
 
     private void unload() {
+        auditPlan = null; autoAudited = false; hintPlan = null; hintIndex = -1; hint = null;
         lazyBuilder.cancel();
         generation++;
         if (pending != null) pending.cancel(true);
         loading = false;
         plan = null;
+        if (ModuleManager.MATERIAL_LIST != null) ModuleManager.MATERIAL_LIST.sourceChanged();
         focusItem = null;
         sourceBlueprint = null;
         replacements.clear();
-        file = null; sourceHash = null; hiddenUndo.clear();
+        file = null; sourceHash = null; history.clear();
         savedSignature = null;
         renderer.clear();
         // Eine laufende Bereichsauswahl bleibt sichtbar, auch ohne geladenen Plan.
@@ -570,14 +576,24 @@ public final class Blueprints extends Module {
                 item -> {
                     replaceDisplayedMaterial(expected, material,
                             net.minecraft.core.registries.BuiltInRegistries.BLOCK.getKey(((net.minecraft.world.item.BlockItem) item).getBlock()).toString());
-                    // Eigener Sammelziel-Eintrag für dasselbe Material wandert mit, sonst bliebe das alte Item gelistet.
-                    var list = ModuleManager.MATERIAL_LIST;
-                    if (plan != expected && list != null && list.isManual(material)) list.replace(material, item);
                 }));
     }
 
     public void resetMaterials() { if (plan != null && !replacements.isEmpty()) applyReplacements(java.util.Map.of()); }
+    private String materialChangeLabel(java.util.Map<String, String> next) {
+        var keys = new java.util.TreeSet<>(replacements.keySet()); keys.addAll(next.keySet());
+        var changes = keys.stream().filter(k -> !java.util.Objects.equals(replacements.get(k), next.get(k))).toList();
+        if (changes.isEmpty()) return "Materialtausch";
+        String key = changes.getFirst();
+        return "Materialtausch: " + blockName(replacements.getOrDefault(key, key)) + " → "
+                + blockName(next.getOrDefault(key, key)) + (changes.size() > 1 ? " (+" + (changes.size() - 1) + " weitere)" : "");
+    }
+    private static String blockName(String id) {
+        var key = net.minecraft.resources.ResourceLocation.tryParse(id);
+        return key == null ? id : net.minecraft.core.registries.BuiltInRegistries.BLOCK.getValue(key).getName().getString();
+    }
     private void applyReplacements(java.util.Map<String, String> next) {
+        if (next.equals(replacements)) return;
         try {
             Blueprint data = com.example.examplemod.blueprint.BlueprintMaterials.remap(sourceBlueprint, next, BlueprintPlan::replacementState);
             BlueprintPlan updated = new BlueprintPlan(data, plan);
@@ -590,6 +606,8 @@ public final class Blueprints extends Module {
             }).toArray();
             updated.restoreAccepted(accepted);
             updated.restoreIgnored(plan.ignoredCells());
+            remember(materialChangeLabel(next));
+            lazyBuilder.cancel();
             plan = updated;
             replacements.clear(); replacements.putAll(next);
             renderer.clear(); hover = null; savedSignature = null;
@@ -628,7 +646,17 @@ public final class Blueprints extends Module {
         lazyBuilder.tick(plan);
         if (plan == null) return;
         int before = plan.layer;
+        if (auditPlan != plan) { auditPlan = plan; autoAudited = false; }
+        boolean auditing = plan.audit().running();
         plan.scan(mc.level, autoLayer.get() && !lazyBuilder.waiting());
+        var progress = plan.layerProgress();
+        if (plan.layer != plan.blueprint.sizeY() - 1 || progress.checked() && !progress.complete()) autoAudited = false;
+        if (!autoAudited && plan.layers != BlueprintPlan.Layers.ALL && plan.focus == null
+                && plan.layer == plan.blueprint.sizeY() - 1 && progress.complete()) {
+            autoAudited = true;
+            if (!plan.audit().running()) startAudit();
+        }
+        if (auditing && !plan.audit().running()) Notifications.info("Abschlusskontrolle", "Prüfung beendet · Restliste unter B → Prüfen");
         if (plan.layer != before) Notifications.success("Ebene fertig", "Weiter mit Ebene " + (plan.layer + 1));
         saveState();
     }
@@ -643,9 +671,15 @@ public final class Blueprints extends Module {
         // Der anvisierte Geisterblock ist immer umrandet; den Tooltip gibt es nur mit Block-Info.
         if (mc.level == null) return;
         hover = findHover(context.cameraPos(), Vec3.directionFromRotation(context.camera().getXRot(), context.camera().getYRot()));
+        if (hover == null || !infoVisible()) hintIndex = -1;
         if (hover != null) {
             VertexConsumer lines = Render3D.lines(context);
             Render3D.box(context, lines, new AABB(hover.pos()).inflate(0.02), Theme.ACCENT_2);
+            if (infoVisible()) {
+                var hint = placementHint();
+                if (hint != null && hint.support() != null && System.currentTimeMillis() < supportUntil)
+                    Render3D.box(context, lines, new AABB(hint.support()).inflate(0.025), Theme.WARNING);
+            }
             Render3D.flush(context);
         }
     }
@@ -656,6 +690,22 @@ public final class Blueprints extends Module {
     public record Hover(int index, BlockPos pos, BlueprintPlan.Status status) {}
     private static final double HOVER_DISTANCE = 24;
     private Hover hover;
+    private BlueprintPlan hintPlan;
+    private int hintIndex = -1;
+    private long hintAt, supportUntil;
+    private com.example.examplemod.blueprint.BlueprintPlacementHint hint;
+    public com.example.examplemod.blueprint.BlueprintPlacementHint placementHint() {
+        if (hover == null || plan == null || !infoVisible()) return null;
+        long now = System.currentTimeMillis();
+        if (hintPlan != plan || hintIndex != hover.index()) {
+            hintPlan = plan; hintIndex = hover.index(); hintAt = 0; supportUntil = now + 1800;
+        }
+        if (now >= hintAt) {
+            hint = com.example.examplemod.blueprint.BlueprintPlacementHint.inspect(mc, plan, hover.index());
+            hintAt = now + 100;
+        }
+        return hint;
+    }
 
     /** Nur gültig, solange die Vorschau läuft und Block-Info an ist. */
     public Hover hover() { return isEnabled() && plan != null && infoVisible() ? hover : null; }
@@ -734,28 +784,62 @@ public final class Blueprints extends Module {
         Hover target = findHover(mc.player.getEyePosition(), mc.player.getViewVector(1F), true);
         if (target == null) { Notifications.info("Bauplan bearbeiten", "Zuerst einen sichtbaren Bauplan-Block anvisieren"); return; }
         lazyBuilder.cancel();
+        remember("Ausblenden: " + cellLabel(target.index()));
         plan.setIgnored(mc.level, target.index(), true);
-        hiddenUndo.addLast(target.index());
+
         renderer.clear(); hover = null; saveState();
         if (ModuleManager.MATERIAL_LIST != null) ModuleManager.MATERIAL_LIST.refresh();
         Notifications.success("Bauplan-Block ausgeblendet", "Zählt als erledigt · im Bauplan-Menü rückgängig machen");
     }
-    public boolean canUndoHidden() { return !hiddenUndo.isEmpty(); }
-    public void undoHidden() {
-        if (plan == null || loading || hiddenUndo.isEmpty()) return;
-        lazyBuilder.cancel();
-        plan.setIgnored(mc.level, hiddenUndo.removeLast(), false);
-        renderer.clear(); hover = null; saveState();
-        if (ModuleManager.MATERIAL_LIST != null) ModuleManager.MATERIAL_LIST.refresh();
+    private String cellLabel(int index) {
+        var cell = plan.blueprint.cells().get(index);
+        var state = plan.state(cell);
+        return (state == null ? "Block" : state.getBlock().getName().getString()) + " · " + plan.position(cell).toShortString();
+    }
+    private void remember(String label) {
+        history.remember(label, plan.acceptedCells(), plan.ignoredCells(), replacements);
+    }
+    public java.util.List<String> historyLabels() { return history.labels(); }
+    public void undoEdit() {
+        var entry = history.latest();
+        if (entry == null || loading || plan == null) return;
+        try {
+            Blueprint data = com.example.examplemod.blueprint.BlueprintMaterials.remap(sourceBlueprint, entry.replacements(), BlueprintPlan::replacementState);
+            BlueprintPlan restored = new BlueprintPlan(data, plan);
+            restored.setTransform(plan.turns(), plan.mirrored());
+            restored.layers = plan.layers; restored.layer = plan.layer; restored.onlyMissing = plan.onlyMissing;
+            restored.restoreAccepted(entry.accepted().stream().toArray());
+            restored.restoreIgnored(entry.ignored().stream().toArray());
+            lazyBuilder.cancel(); plan = restored;
+            replacements.clear(); replacements.putAll(entry.replacements());
+            history.removeLatest(); renderer.clear(); hover = null; savedSignature = null;
+            saveState();
+            if (ModuleManager.MATERIAL_LIST != null) ModuleManager.MATERIAL_LIST.refresh();
+            Notifications.success("Rückgängig", entry.label());
+        } catch (RuntimeException failure) { failed(failure); }
+    }
+    public void startAudit() {
+        if (plan == null || loading || !plan.inDimension(mc.level)) return;
+        if (!isEnabled()) setEnabled(true, false);
+        if (plan.audit().running()) return;
+        lazyBuilder.cancel(); plan.startAudit();
+    }
+    public void showAuditCell(int index) {
+        if (plan == null || loading || index < 0 || index >= plan.blueprint.cells().size()) return;
+        focusItem(null); plan.layers = BlueprintPlan.Layers.SINGLE; plan.layer = plan.buildLayer(index);
+        plan.resetLayerProgress(); renderer.clear();
+        Notifications.info("Reststelle", cellLabel(index));
     }
     /** Restore original blocks and materials while retaining the chosen placement and layer. */
     public void restoreOriginal() {
         if (plan == null || sourceBlueprint == null || loading) return;
+        if (replacements.isEmpty() && plan.ignoredCount() == 0 && plan.acceptedCount() == 0) return;
         lazyBuilder.cancel();
         BlueprintPlan original = new BlueprintPlan(sourceBlueprint, plan);
         original.setTransform(plan.turns(), plan.mirrored());
         original.layers = plan.layers; original.layer = plan.layer; original.onlyMissing = plan.onlyMissing;
-        plan = original; replacements.clear(); hiddenUndo.clear(); focusItem = null;
+        remember("Original wiederherstellen");
+        plan = original; replacements.clear(); focusItem = null;
         renderer.clear(); hover = null; savedSignature = null; saveState();
         if (ModuleManager.MATERIAL_LIST != null) ModuleManager.MATERIAL_LIST.refresh();
         Notifications.success("Original wiederhergestellt", "Ausgeblendete Blöcke, Abweichungen und Materialtausch zurückgesetzt");
@@ -784,14 +868,18 @@ public final class Blueprints extends Module {
         BlockPos pos = hit.getBlockPos();
         String actual = mc.level.getBlockState(pos).getBlock().getName().getString();
         if (plan.accepted(index)) {
+            remember("Abweichung zurücknehmen: " + cellLabel(index));
             plan.setAccepted(mc.level, index, false);
+            saveState();
             Notifications.info("Abweichung zurückgenommen", actual + " wird wieder geprüft");
             return;
         }
         BlueprintPlan.Status status = plan.compare(mc.level, index, pos);
         switch (status) {
             case WRONG_BLOCK, WRONG_STATE, UNSUPPORTED -> {
+                remember("Abweichung akzeptieren: " + cellLabel(index));
                 plan.setAccepted(mc.level, index, true);
+                saveState();
                 BlockState expected = plan.state(plan.blueprint.cells().get(index));
                 String text = status == BlueprintPlan.Status.WRONG_STATE || expected == null
                         ? actual + " so übernommen" : actual + " statt " + expected.getBlock().getName().getString();
@@ -806,7 +894,9 @@ public final class Blueprints extends Module {
     public void clearAccepted() {
         if (plan == null) return;
         int count = plan.acceptedCount();
+        if (count > 0) remember(count + " Abweichungen zurücksetzen");
         plan.clearAccepted();
+        saveState();
         if (count > 0) Notifications.info("Bauplan", count + " Abweichungen zurückgesetzt");
     }
 
@@ -879,8 +969,7 @@ public final class Blueprints extends Module {
     }
 
     /**
-     * Wie Block auswählen im Überlebensmodus: liegt das Item in der Hotbar, wird dieser Platz gewählt, sonst
-     * wird es in die Hotbar getauscht (wie Zahlentaste im Inventar). Es wird nie ein Item erzeugt.
+     * Vorhandene Items auswählen; nur im Kreativmodus darf ein fehlendes Item erzeugt werden.
      */
     private void pick(Hover target) {
         Blueprint.Cell cell = plan.blueprint.cells().get(target.index());
@@ -891,7 +980,25 @@ public final class Blueprints extends Module {
             Notifications.info("Bauplan", expected.getBlock().getName().getString() + " lässt sich nicht auswählen");
             return;
         }
-        takeIntoHand(item, plan.material(cell));
+        LocalPlayer player = mc.player;
+        if (player == null || mc.gameMode == null) return;
+        Inventory inventory = player.getInventory();
+        if (!player.isCreative() || findSlot(inventory, item) >= 0) {
+            takeIntoHand(item, plan.material(cell));
+            return;
+        }
+        if (player.containerMenu != player.inventoryMenu || !player.inventoryMenu.getCarried().isEmpty()) return;
+
+        // Vanilla preserves the selected hotbar item in a free inventory slot when possible.
+        // Synchronize that slot too, otherwise a later server update would lose the moved item.
+        int hotbar = inventory.getSuitableHotbarSlot();
+        int preservedSlot = inventory.getItem(hotbar).isEmpty() ? -1 : inventory.getFreeSlot();
+        inventory.addAndPickItem(new ItemStack(item));
+        if (preservedSlot >= 0) {
+            int menuSlot = preservedSlot < HOTBAR ? 36 + preservedSlot : preservedSlot;
+            mc.gameMode.handleCreativeModeItemAdd(inventory.getItem(preservedSlot), menuSlot);
+        }
+        mc.gameMode.handleCreativeModeItemAdd(inventory.getSelectedItem(), 36 + inventory.getSelectedSlot());
     }
 
     /**

@@ -139,7 +139,7 @@ public final class LazyBuilder {
         for (int n = 0; n < nearby.size(); n++) {
             int index = nearby.getInt(n);
             var cell = plan.blueprint.cells().get(index);
-            if (cell.y() != plan.layer || plan.ignored(index) || plan.accepted(index) || plan.unsupported(cell)) continue;
+            if (!plan.onLayer(index, plan.layer) || plan.ignored(index) || plan.accepted(index) || plan.unsupported(cell)) continue;
             BlockPos pos = plan.position(cell);
             double distance = eye.distanceToSqr(Vec3.atCenterOf(pos));
             if (distance > (reach + 0.9) * (reach + 0.9) || skipped.containsKey(pos)) continue;
@@ -176,8 +176,10 @@ public final class LazyBuilder {
         ItemStack wanted = new ItemStack(BlueprintPlan.materialItem(choice.state));
         if (!selectItem(wanted)) return;
         // Actual selected stack and placement context, not a synthetic item, govern the final check.
-        hit = placement(choice, mc.player.getMainHandItem(), reach, new int[]{24});
-        if (hit == null) { status = "Baut"; return; }
+        if (!(mc.player.getMainHandItem().getItem() instanceof BlockItem selectedItem)
+                || !validPlacement(choice, mc.player.getMainHandItem(), selectedItem, hit, reach)) {
+            status = "Baut"; return;
+        }
         pending = choice.pos; expected = choice.state;
         gate.submitted(tick, feature.lazyTempo.is("Ruhig") ? 10 : feature.lazyTempo.is("Zügig") ? 4 : 6);
         status = "Setze " + expected.getBlock().getName().getString();
@@ -273,8 +275,21 @@ public final class LazyBuilder {
                         LazyBuildGeometry.nearestFacePoint(box, face, new Vec3(center.x, box.minY + box.getYsize() * 0.25, center.z)),
                         LazyBuildGeometry.nearestFacePoint(box, face, new Vec3(center.x, box.minY + box.getYsize() * 0.75, center.z))
                 };
+                if (target.state.hasProperty(BlockStateProperties.SLAB_TYPE)) {
+                    boolean top = target.state.getValue(BlockStateProperties.SLAB_TYPE) == SlabType.TOP;
+                    Vec3 nearest = LazyBuildGeometry.slabFacePoint(box, face, eye, target.pos.getY(), top);
+                    if (nearest == null) continue;
+                    samples = new Vec3[]{nearest, LazyBuildGeometry.slabFacePoint(box, face, center, target.pos.getY(), top)};
+                }
                 for (Vec3 point : new java.util.LinkedHashSet<>(java.util.List.of(samples))) {
                     if (eye.distanceToSqr(point) > reach * reach) continue;
+                    // Do not spend ray budget on hits that merge the support slab or create the wrong half.
+                    if (target.state.hasProperty(BlockStateProperties.SLAB_TYPE)) {
+                        var probe = item.updatePlacementContext(new BlockPlaceContext(mc.player, InteractionHand.MAIN_HAND,
+                                stack, new BlockHitResult(point, face, support, false)));
+                        if (probe == null || !probe.getClickedPos().equals(target.pos)
+                                || !BlueprintPlan.matches(item.getBlock().getStateForPlacement(probe), target.state)) continue;
+                    }
                     if (budget[0]-- <= 0) return null;
                     Vec3 inside = point.add(-face.getStepX() * 0.000001, -face.getStepY() * 0.000001, -face.getStepZ() * 0.000001);
                     BlockHitResult visible = mc.level.clip(new ClipContext(eye, inside, ClipContext.Block.OUTLINE, ClipContext.Fluid.NONE, mc.player));
